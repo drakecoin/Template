@@ -1,0 +1,16 @@
+{
+  "name": "kerbside",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "packages/engine",
+    "web"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w kerbside-web",
+    "build": "npm run build -w kerbside-web",
+    "preview": "npm run preview -w kerbside-web",
+    "test": "npm run test -w @kerbside/engine",
+    "typecheck": "npm run typecheck -w @kerbside/engine && npm run typecheck -w kerbside-web"
+  }
+}
