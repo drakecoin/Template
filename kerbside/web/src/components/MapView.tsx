@@ -1,8 +1,9 @@
 import {
+  ALL_ZONES,
   fmtCost,
   zoneActiveDuring,
   zoneHoursText,
-  ZONES,
+  zoneRings,
   type EvaluatedOption,
   type LatLng,
   type Spot,
@@ -77,25 +78,31 @@ export function MapView({ dest, window: win, results, selection, onSelect, toast
     const layer = zoneLayerRef.current;
     if (!layer) return;
     layer.clearLayers();
-    for (const z of ZONES) {
+    // borough fallbacks first so specific zones draw on top of them
+    const ordered = [...ALL_ZONES].sort((a) => (a.kind === "borough" ? -1 : 1));
+    for (const z of ordered) {
       const active = win ? zoneActiveDuring(z, win.start, win.end) : true;
-      L.polygon(z.poly, {
-        color: active ? "#E8A200" : "#AEB7C9",
-        weight: 1.6,
-        dashArray: "5 5",
-        fillColor: active ? "#FFCF33" : "#C9D1E0",
-        fillOpacity: active ? 0.16 : 0.07,
-      })
-        .bindPopup(
-          "<b>" + z.name + "</b><br>Controlled: " + zoneHoursText(z) +
-            (active
-              ? "<br><b style='color:#B54708'>Active during your stay</b>"
-              : "<br>Not active for your times") +
-            "<br><a href='" + z.src + "' target='_blank' rel='noopener'>" +
-            (z.verified ? "Hours from borough website ↗" : "Indicative — check borough website ↗") +
-            "</a>",
-        )
-        .addTo(layer);
+      const borough = z.kind === "borough";
+      const popup =
+        "<b>" + z.name + "</b><br>Controlled: " + zoneHoursText(z) +
+        (active
+          ? "<br><b style='color:#B54708'>Active during your stay</b>"
+          : "<br>Not active for your times") +
+        (borough ? "<br><i>Borough-level estimate — hours vary by zone</i>" : "") +
+        "<br><a href='" + z.src + "' target='_blank' rel='noopener'>" +
+        (z.verified ? "Hours from borough website ↗" : "Indicative — check borough website ↗") +
+        "</a>";
+      for (const ring of zoneRings(z)) {
+        L.polygon(ring, {
+          color: active ? (borough ? "#D9A93E" : "#E8A200") : "#AEB7C9",
+          weight: borough ? 1 : 1.6,
+          dashArray: borough ? "2 6" : "5 5",
+          fillColor: active ? "#FFCF33" : "#C9D1E0",
+          fillOpacity: borough ? (active ? 0.06 : 0.03) : active ? 0.16 : 0.07,
+        })
+          .bindPopup(popup)
+          .addTo(layer);
+      }
     }
   }, [win]);
 

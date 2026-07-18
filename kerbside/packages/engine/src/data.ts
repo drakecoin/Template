@@ -1,3 +1,4 @@
+import { BOROUGH_ZONES } from "./boroughs.js";
 import type { Dataset, Spot, Zone } from "./types.js";
 
 export interface Place {
@@ -335,4 +336,10 @@ export const PC_DISTRICTS: Record<string, [number, number]> = {
   SW11: [51.466, -0.166],
 };
 
-export const DEFAULT_DATASET: Dataset = { zones: ZONES, spots: SPOTS };
+/**
+ * Specific curated zones first, then borough-level fallbacks from real boundary
+ * data — zoneAt() returns the first match, so precise records win.
+ */
+export const ALL_ZONES: Zone[] = [...ZONES, ...BOROUGH_ZONES];
+
+export const DEFAULT_DATASET: Dataset = { zones: ALL_ZONES, spots: SPOTS };

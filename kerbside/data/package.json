@@ -1,0 +1,17 @@
+{
+  "name": "kerbside-data",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "etl": "tsx etl.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@kerbside/engine": "*"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
+  }
+}

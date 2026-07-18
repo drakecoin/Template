@@ -1,10 +1,10 @@
 import {
+  ALL_ZONES,
   DEFAULT_DATASET,
   evaluate,
   fmtCost,
   MAX_WINDOW_HOURS,
   PLACES,
-  ZONES,
   zoneAt,
   type EvaluatedOption,
   type LatLng,
@@ -100,7 +100,7 @@ export function App() {
       });
       setWindow(win);
       setResults(res);
-      setDestZone(zoneAt(d, ZONES) ?? null);
+      setDestZone(zoneAt(d, ALL_ZONES) ?? null);
       setHasSearched(true);
       setOverlayOpen(false);
 

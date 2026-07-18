@@ -8,16 +8,22 @@ export interface SchedEntry {
 export interface Zone {
   id: string;
   name: string;
+  /** "cpz" (default): a specific zone. "borough": borough-level fallback from real boundary data. */
+  kind?: "cpz" | "borough";
   verified: boolean;
   /** Borough source URL for the hours. */
   src: string;
+  /** Date the hours/tariff were last checked against the source (YYYY-MM-DD). */
+  checkedAt?: string;
   sched: SchedEntry[];
   /** Pay-and-display rate while controlled, in pence per hour. */
   ratePence: number;
   /** Maximum stay during controlled hours, in hours. */
   maxStayHours: number;
-  /** Hand-drawn boundary, [lat, lng] rings. */
-  poly: [number, number][];
+  /** Single boundary ring, [lat, lng] (hand-drawn zones). */
+  poly?: [number, number][];
+  /** Multiple boundary rings, [lat, lng] (imported real boundaries). */
+  polys?: [number, number][][];
 }
 
 export type SpotType = "cp" | "paid" | "res" | "yellow" | "freeSt";

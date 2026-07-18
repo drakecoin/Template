@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  ALL_ZONES,
+  BOROUGH_ZONES,
   carParkCost,
   controlledOverlapMin,
   DEFAULT_DATASET,
@@ -7,6 +9,7 @@ import {
   pointInPolygon,
   SPOTS,
   zoneAt,
+  zoneRings,
   ZONES,
   type EvaluatedOption,
 } from "../src/index.js";
@@ -123,7 +126,7 @@ describe("destination streets (zone lookup by polygon)", () => {
     expect(zoneAt(N1_2RE, ZONES)?.id).toBe("isA");
     expect(zoneAt({ lat: 51.6, lng: 0.2 }, ZONES)).toBeUndefined();
     // Wharf Road stays just outside the widened Islington boundary
-    expect(pointInPolygon({ lat: 51.5297, lng: -0.0948 }, ZONES[0].poly)).toBe(false);
+    expect(pointInPolygon({ lat: 51.5297, lng: -0.0948 }, ZONES[0].poly!)).toBe(false);
   });
 
   it("N6 5TS on a Saturday: your own street is free and wins (zone only runs Mon–Fri 10–12)", () => {
@@ -149,7 +152,8 @@ describe("destination streets (zone lookup by polygon)", () => {
   });
 
   it("outside every zone the destination street is free with a data caveat", () => {
-    const res = evaluate({ lat: 51.507, lng: -0.222 }, d(14, 11), d(14, 13), DEFAULT_DATASET, {
+    // Wimbledon (Merton) — no borough fallback configured there
+    const res = evaluate({ lat: 51.42, lng: -0.21 }, d(14, 11), d(14, 13), DEFAULT_DATASET, {
       destinationStreets: true,
     });
     const street = byName(res, "Streets at your destination");
@@ -161,6 +165,41 @@ describe("destination streets (zone lookup by polygon)", () => {
   it("is off by default so the SPEC §6 expectations are unchanged", () => {
     const res = evaluate(ANGEL, d(18, 15), d(18, 18));
     expect(res.find((r) => r.spot.n === "Streets at your destination")).toBeUndefined();
+  });
+});
+
+describe("borough fallback zones (real boundary data)", () => {
+  // Highbury: inside the real Islington borough boundary but outside every
+  // hand-drawn specific zone — the case reported failing with N1 2RE.
+  const HIGHBURY = { lat: 51.548, lng: -0.1 };
+
+  it("resolves points to real borough boundaries when no specific zone matches", () => {
+    expect(zoneAt(HIGHBURY, ALL_ZONES)?.id).toBe("boro-islington");
+    expect(zoneAt({ lat: 51.5504, lng: -0.1425 }, ALL_ZONES)?.id).toBe("boro-camden"); // Kentish Town
+    expect(zoneAt({ lat: 51.42, lng: -0.21 }, ALL_ZONES)).toBeUndefined(); // Wimbledon
+  });
+
+  it("specific zones still win over the borough fallback", () => {
+    expect(zoneAt(ANGEL, ALL_ZONES)?.id).toBe("isA");
+  });
+
+  it("Sat 10:30–14:30 in Islington outside the curated zones now charges for the controlled hours", () => {
+    const res = evaluate(HIGHBURY, d(18, 10, 30), d(18, 14, 30), DEFAULT_DATASET, {
+      destinationStreets: true,
+    });
+    const street = byName(res, "Streets at your destination");
+    expect(street.valid).toBe(true);
+    expect(street.costPence).toBe(1950); // Sat control 08:30–13:30 → 3h × £6.50
+    expect(street.note).toContain("Sat 08:30–13:30");
+  });
+
+  it("borough records are labelled unverified with a source and check date", () => {
+    for (const z of BOROUGH_ZONES) {
+      expect(z.verified).toBe(false);
+      expect(z.src).toMatch(/^https:/);
+      expect(z.checkedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(zoneRings(z).length).toBeGreaterThan(0);
+    }
   });
 });
 

@@ -70,9 +70,22 @@ export function pointInPolygon(pt: LatLng, poly: [number, number][]): boolean {
   return inside;
 }
 
-/** The CPZ whose (hand-drawn, indicative) boundary contains the point, if any. */
+/** All boundary rings of a zone, whichever representation it uses. */
+export function zoneRings(z: Zone): [number, number][][] {
+  return z.polys ?? (z.poly ? [z.poly] : []);
+}
+
+export function pointInZone(pt: LatLng, z: Zone): boolean {
+  return zoneRings(z).some((ring) => pointInPolygon(pt, ring));
+}
+
+/**
+ * The zone whose boundary contains the point, if any. Zone order matters:
+ * specific CPZ records come before borough-level fallbacks in ALL_ZONES, so
+ * the most precise match wins.
+ */
 export function zoneAt(pt: LatLng, zones: Zone[]): Zone | undefined {
-  return zones.find((z) => pointInPolygon(pt, z.poly));
+  return zones.find((z) => pointInZone(pt, z));
 }
 
 /**
