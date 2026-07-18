@@ -79,6 +79,49 @@ function pinIcon(spot: Spot, dim: boolean, win: boolean): L.DivIcon {
   });
 }
 
+/** Open tight (~200 m radius). */
+const INITIAL_RADIUS_KM = 0.2;
+/** Keep the tight view only if it holds at least this many options. */
+const MIN_OPTIONS_TIGHT = 3;
+/** Otherwise zoom out to reveal up to this many of the nearest options. */
+const OPTIONS_WHEN_ZOOMING_OUT = 5;
+
+/**
+ * Frame the destination on first load: start at ~200 m; if fewer than 3 options
+ * fall inside that, widen just enough to show up to 5 of the closest options.
+ */
+function fitToInitialOptions(map: L.Map, dest: LatLng | null, results: EvaluatedOption[]): void {
+  const valid = results.filter((r) => r.valid).sort((a, b) => a.km - b.km);
+  if (!dest && !valid.length) return;
+
+  let radiusKm = INITIAL_RADIUS_KM;
+  const within = valid.filter((r) => r.km <= INITIAL_RADIUS_KM).length;
+  if (within < MIN_OPTIONS_TIGHT && valid.length) {
+    const n = Math.min(OPTIONS_WHEN_ZOOMING_OUT, valid.length);
+    radiusKm = Math.max(INITIAL_RADIUS_KM, valid[n - 1].km);
+  }
+
+  if (!dest) {
+    const pts = valid
+      .filter((r) => r.km <= radiusKm)
+      .map((r) => [r.spot.lat, r.spot.lng] as [number, number]);
+    if (pts.length) map.fitBounds(L.latLngBounds(pts), { padding: [40, 40], maxZoom: 17, animate: true });
+    return;
+  }
+
+  // A box of radiusKm around the destination keeps the car central and
+  // guarantees every option within that radius is visible.
+  const latDelta = radiusKm / 111;
+  const lngDelta = radiusKm / (111 * Math.cos((dest.lat * Math.PI) / 180));
+  map.fitBounds(
+    L.latLngBounds(
+      [dest.lat - latDelta, dest.lng - lngDelta],
+      [dest.lat + latDelta, dest.lng + lngDelta],
+    ),
+    { padding: [40, 40], maxZoom: 17, animate: true },
+  );
+}
+
 export function MapView({ dest, window: win, results, selection, onSelect, toast }: Props) {
   const divRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -192,20 +235,14 @@ export function MapView({ dest, window: win, results, selection, onSelect, toast
       m.addTo(layer);
       markersRef.current.push(m);
     });
-    // recentre on the searched destination and its options (also after "Edit"),
-    // but only when a new search produced these results — not on a mere dest change
+    // recentre on the searched destination (also after "Edit"), but only when a
+    // new search produced these results — not on a mere dest change.
+    // Open tight (~200 m radius); if fewer than 3 options fall inside that, zoom
+    // out just enough to reveal up to 5 of the nearest options.
     const map = mapRef.current;
     if (map && results !== fittedRef.current) {
       fittedRef.current = results;
-      const pts: [number, number][] = results
-        .filter((r) => r.valid)
-        .map((r) => [r.spot.lat, r.spot.lng]);
-      if (dest) pts.push([dest.lat, dest.lng]);
-      if (pts.length > 1) {
-        map.fitBounds(L.latLngBounds(pts), { padding: [48, 48], maxZoom: 16, animate: true });
-      } else if (dest) {
-        map.setView([dest.lat, dest.lng], 15, { animate: true });
-      }
+      fitToInitialOptions(map, dest, results);
     }
     setTimeout(() => mapRef.current?.invalidateSize(), 300);
   }, [results, dest]);
