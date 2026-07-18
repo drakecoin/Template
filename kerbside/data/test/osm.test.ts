@@ -36,8 +36,9 @@ const FIXTURE: OsmResponse = {
     way(2, "Ticket Street", { "parking:left": "lane", "parking:left:fee": "yes" }, 51.541, -0.101),
     way(3, "Resident Road", { "parking:lane:both": "parallel", "parking:condition:both": "residents" }),
     way(4, "Banned Alley", { "parking:both": "no" }),
-    way(5, "Free Way", { "parking:right": "lane" }),
+    way(5, "Unknown Way", { "parking:right": "lane" }), // in-zone, restriction unrecorded
     way(6, "Orphan Road", { "parking:both": "lane", "parking:both:restriction": "residents" }, 51.6, -0.3),
+    way(7, "Suburb Street", { "parking:right": "lane" }, 51.6, -0.3), // outside every zone
   ],
 };
 
@@ -51,10 +52,10 @@ describe("transformOsmKerbs", () => {
     expect(classifyWay({ "parking:right": "lane" })).toBe("freeSt");
   });
 
-  it("groups ways by street + type, joins zones, drops banned and orphan streets", () => {
+  it("groups ways by street + type, joins zones, drops banned/orphan/unknown-in-zone streets", () => {
     expect(spots.map((s) => s.n)).toEqual([
-      "Free Way (free kerb)",
       "Resident Road (resident kerb)",
+      "Suburb Street (free kerb)",
       "Ticket Street (on-street parking)",
     ]);
     const ticket = spots[2];
@@ -63,5 +64,7 @@ describe("transformOsmKerbs", () => {
     expect(ticket.note).toContain("2 segments");
     expect(spots.find((s) => s.n.startsWith("Banned"))).toBeUndefined();
     expect(spots.find((s) => s.n.startsWith("Orphan"))).toBeUndefined();
+    // parking recorded but restriction unknown, inside a CPZ: never offered as free
+    expect(spots.find((s) => s.n.startsWith("Unknown"))).toBeUndefined();
   });
 });

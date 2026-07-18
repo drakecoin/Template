@@ -34,13 +34,23 @@ function findKey(props: Record<string, unknown>, patterns: RegExp[]): string | u
   return undefined;
 }
 
-/** Map a portal bay-type description onto the engine's spot types. */
+/**
+ * Map a portal bay-type description onto the engine's spot types.
+ * Exclusions run first: a bay a visiting car can't legally use (disabled,
+ * loading, motorcycles, car club, EV-only, trade…) must never become an
+ * option, whatever else its description says.
+ */
 export function baySpotType(desc: string): SpotRecord["type"] | null {
   const t = desc.toLowerCase();
-  if (/resident/.test(t)) return "res";
-  if (/shared|pay\s*(&|and)\s*display|paid|p\s*&\s*d|cashless|chargeable/.test(t)) return "paid";
+  if (
+    /disabled|loading|motorcycle|bus|bicycle|cycle|taxi|police|ambulance|doctor|diplomatic|car club|trader|ev charging|electric vehicle|dockless|off-street|keyworker/.test(
+      t,
+    )
+  )
+    return null;
+  if (/paid-for|shared|pay\s*(&|and)\s*display|p\s*&\s*d|cashless|chargeable/.test(t)) return "paid";
+  if (/resident|permit holders/.test(t)) return "res";
   if (/free|uncontrolled/.test(t)) return "freeSt";
-  // disabled, doctor, car club, motorcycle, loading, business, taxi… not offerable
   return null;
 }
 
@@ -125,7 +135,8 @@ export function transformCamdenBays(
 }
 
 function titleCase(s: string): string {
-  return s.toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase());
+  // capitalise after start/space/hyphen only — not after apostrophes ("Abbot's")
+  return s.toLowerCase().replace(/(^|[\s-])([a-z])/g, (_, p: string, c: string) => p + c.toUpperCase());
 }
 
 async function fetchLive(): Promise<GeoFeatureCollection> {

@@ -136,6 +136,11 @@ export function transformOsmKerbs(res: OsmResponse, zones: ZoneRecord[]): SpotRe
     const lng = g.lngs.reduce((a, b) => a + b, 0) / g.lngs.length;
     const zone = zones.find((z) => pointInRings(lat, lng, z.polys));
     if ((g.type === "paid" || g.type === "res") && !zone) continue;
+    // "free" here mostly means OSM recorded that parking exists without
+    // recording the restriction. Inside a CPZ that is NOT evidence of free
+    // parking — offering it risks a PCN, so drop it. Outside every zone,
+    // free is the honest reading.
+    if (g.type === "freeSt" && zone) continue;
     spots.push({
       n: g.name + " (" + TYPE_LABEL[g.type] + ")",
       type: g.type,

@@ -33,11 +33,11 @@ const bay = (street: string, type: string, lat: number, lng: number, spaces?: nu
 const FIXTURE: GeoFeatureCollection = {
   type: "FeatureCollection",
   features: [
-    bay("JAMESTOWN ROAD", "Shared Use (Cashless)", 51.539, -0.1462, 6),
-    bay("JAMESTOWN ROAD", "Shared Use (Cashless)", 51.5392, -0.146, 4),
-    bay("ALBERT STREET", "Residents", 51.5364, -0.1443, 12),
-    bay("SOMEWHERE OUTSIDE", "Residents", 51.6, -0.3, 4), // outside every zone
-    bay("PRATT STREET", "Disabled", 51.537, -0.144, 2), // not offerable
+    bay("JAMESTOWN ROAD", "paid-for", 51.539, -0.1462, 6),
+    bay("JAMESTOWN ROAD", "paid-for", 51.5392, -0.146, 4),
+    bay("ALBERT'S STREET", "resident permit holders only", 51.5364, -0.1443, 12),
+    bay("SOMEWHERE OUTSIDE", "resident permit holders only", 51.6, -0.3, 4), // outside every zone
+    bay("PRATT STREET", "disabled (blue badge)", 51.537, -0.144, 2), // not offerable
   ],
 };
 
@@ -46,7 +46,7 @@ describe("transformCamdenBays", () => {
 
   it("groups bays by street + type with summed spaces and a centroid position", () => {
     expect(spots.map((s) => s.n)).toEqual([
-      "Albert Street (resident bays)",
+      "Albert's Street (resident bays)",
       "Jamestown Road (paid bays)",
     ]);
     const jamestown = spots[1];
@@ -60,11 +60,16 @@ describe("transformCamdenBays", () => {
     expect(spots.find((s) => s.n.startsWith("Somewhere"))).toBeUndefined();
   });
 
-  it("maps portal bay descriptions to engine spot types", () => {
-    expect(baySpotType("Shared Use (Cashless)")).toBe("paid");
-    expect(baySpotType("Pay & Display")).toBe("paid");
-    expect(baySpotType("Residents")).toBe("res");
-    expect(baySpotType("Disabled")).toBeNull();
-    expect(baySpotType("Car Club")).toBeNull();
+  it("maps portal bay descriptions to engine spot types, exclusions first", () => {
+    expect(baySpotType("paid-for")).toBe("paid");
+    expect(baySpotType("paid-for / resident permit holders")).toBe("paid"); // shared-use
+    expect(baySpotType("resident permit holders only")).toBe("res");
+    expect(baySpotType("permit holders only")).toBe("res");
+    expect(baySpotType("paid-for (solo motorcycles only)")).toBeNull();
+    expect(baySpotType("free (buses)")).toBeNull();
+    expect(baySpotType("disabled (blue badge)")).toBeNull();
+    expect(baySpotType("electric vehicle recharging")).toBeNull();
+    expect(baySpotType("car club")).toBeNull();
+    expect(baySpotType("free")).toBe("freeSt");
   });
 });
