@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { centroid, type GeoFeatureCollection } from "../geo.js";
 import type { ZoneRecord } from "./boroughs.js";
+import { discoverDatasets } from "./socrata.js";
 
 /**
  * Kerb-level parking bays from Camden's open data portal ("Parking bays"
@@ -11,9 +12,6 @@ import type { ZoneRecord } from "./boroughs.js";
  * containing their centroid so the engine prices them with real zone hours.
  */
 const DOMAIN = "opendata.camden.gov.uk";
-const CATALOG_URL =
-  "https://api.us.socrata.com/api/catalog/v1?domains=" + DOMAIN +
-  "&search_context=" + DOMAIN + "&q=parking%20bays&limit=20";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const RAW_SNAPSHOT = join(here, "..", "raw", "camden_bays.geojson");
@@ -25,10 +23,6 @@ export interface SpotRecord {
   lng: number;
   zone?: string;
   note: string;
-}
-
-interface CatalogResult {
-  results?: { resource?: { id?: string; name?: string } }[];
 }
 
 function findKey(props: Record<string, unknown>, patterns: RegExp[]): string | undefined {
@@ -135,14 +129,8 @@ function titleCase(s: string): string {
 }
 
 async function fetchLive(): Promise<GeoFeatureCollection> {
-  const cat = await fetch(CATALOG_URL, { signal: AbortSignal.timeout(20000) });
-  if (!cat.ok) throw new Error("catalogue HTTP " + cat.status);
-  const catalog = (await cat.json()) as CatalogResult;
-  const candidates = (catalog.results ?? [])
-    .map((r) => r.resource)
-    .filter((r): r is { id: string; name: string } =>
-      Boolean(r?.id && r.name && /parking bays/i.test(r.name)),
-    );
+  const discovered = await discoverDatasets(DOMAIN, "parking bays", "camden-bays");
+  const candidates = discovered.filter((r) => /parking bays/i.test(r.name));
   for (const c of candidates) {
     const url = "https://" + DOMAIN + "/resource/" + c.id + ".geojson?$limit=100000";
     try {

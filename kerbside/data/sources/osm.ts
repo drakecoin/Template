@@ -18,7 +18,9 @@ import type { SpotRecord } from "./camdenBays.js";
 const OVERPASS_ENDPOINTS = [
   "https://overpass-api.de/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter",
+  "https://overpass.private.coffee/api/interpreter",
 ];
+const MAX_ATTEMPTS_PER_ENDPOINT = 2;
 // Inner London: matches where we have zone data for pricing
 const BBOX = "51.46,-0.25,51.60,0.05"; // south,west,north,east
 
@@ -147,23 +149,42 @@ export function transformOsmKerbs(res: OsmResponse, zones: ZoneRecord[]): SpotRe
   return spots;
 }
 
+const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
+
 async function fetchLive(): Promise<OsmResponse> {
   let lastErr = "";
   for (const endpoint of OVERPASS_ENDPOINTS) {
-    try {
-      const r = await fetch(endpoint, {
-        method: "POST",
-        body: "data=" + encodeURIComponent(QUERY),
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        signal: AbortSignal.timeout(150000),
-      });
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      const json = (await r.json()) as OsmResponse;
-      if (!json.elements) throw new Error("no elements");
-      console.log("[osm] fetched " + json.elements.length + " tagged ways from " + endpoint);
-      return json;
-    } catch (e) {
-      lastErr = String(e);
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS_PER_ENDPOINT; attempt++) {
+      try {
+        const r = await fetch(endpoint, {
+          method: "POST",
+          body: "data=" + encodeURIComponent(QUERY),
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": "kerbside-etl/0.1 (parking data import; contact via repo)",
+          },
+          signal: AbortSignal.timeout(150000),
+        });
+        if (r.status === 429 || r.status === 504) {
+          // rate-limited or overloaded: honour Retry-After (capped), then retry once
+          const retryAfter = Math.min(Number(r.headers.get("retry-after")) || 30, 60);
+          lastErr = "HTTP " + r.status + " from " + endpoint;
+          if (attempt < MAX_ATTEMPTS_PER_ENDPOINT) {
+            console.log("[osm] " + lastErr + " — waiting " + retryAfter + "s before retry");
+            await sleep(retryAfter * 1000);
+            continue;
+          }
+          break; // move on to the next mirror
+        }
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        const json = (await r.json()) as OsmResponse;
+        if (!json.elements) throw new Error("no elements");
+        console.log("[osm] fetched " + json.elements.length + " tagged ways from " + endpoint);
+        return json;
+      } catch (e) {
+        lastErr = String(e) + " (" + endpoint + ")";
+        break; // non-retryable error: try the next mirror
+      }
     }
   }
   throw new Error(lastErr || "all Overpass endpoints failed");

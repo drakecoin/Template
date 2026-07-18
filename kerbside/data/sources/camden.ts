@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { outerRings, toLatLngRing, type GeoFeatureCollection } from "../geo.js";
 import { parseScheduleText } from "../schedule.js";
 import type { ZoneRecord } from "./boroughs.js";
+import { discoverDatasets } from "./socrata.js";
 
 /**
  * Per-zone CPZ polygons from Camden's open data portal (Socrata).
@@ -15,9 +16,6 @@ import type { ZoneRecord } from "./boroughs.js";
  * (the borough-level fallback still covers Camden).
  */
 const DOMAIN = "opendata.camden.gov.uk";
-const CATALOG_URL =
-  "https://api.us.socrata.com/api/catalog/v1?domains=" + DOMAIN +
-  "&search_context=" + DOMAIN + "&q=controlled%20parking%20zones&limit=20";
 const SRC_PAGE = "https://" + DOMAIN + "/";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -41,10 +39,6 @@ const DEFAULT_SCHED = [
   { days: [1, 2, 3, 4, 5], from: "08:30", to: "18:30" },
   { days: [6], from: "08:30", to: "13:30" },
 ];
-
-interface CatalogResult {
-  results?: { resource?: { id?: string; name?: string; type?: string } }[];
-}
 
 function findKey(props: Record<string, unknown>, patterns: RegExp[]): string | undefined {
   const keys = Object.keys(props);
@@ -103,14 +97,8 @@ export function transformCamdenFeatures(
 }
 
 async function fetchLive(): Promise<GeoFeatureCollection> {
-  const cat = await fetch(CATALOG_URL, { signal: AbortSignal.timeout(20000) });
-  if (!cat.ok) throw new Error("catalogue HTTP " + cat.status);
-  const catalog = (await cat.json()) as CatalogResult;
-  const candidates = (catalog.results ?? [])
-    .map((r) => r.resource)
-    .filter((r): r is { id: string; name: string } =>
-      Boolean(r?.id && r.name && /controlled parking|cpz/i.test(r.name)),
-    );
+  const discovered = await discoverDatasets(DOMAIN, "controlled parking", "camden");
+  const candidates = discovered.filter((r) => /controlled parking|cpz/i.test(r.name));
   for (const c of candidates) {
     const url = "https://" + DOMAIN + "/resource/" + c.id + ".geojson?$limit=50000";
     try {
