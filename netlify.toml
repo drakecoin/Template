@@ -1,9 +1,8 @@
 # Netlify build configuration for the Kerbside web app.
-# The app lives in the `kerbside/` subdirectory of this repo, so the build runs
-# from there. `publish` is resolved relative to `base`.
+# The app is the repo root (npm workspaces: packages/engine, web, data).
+# No `base` needed. In the Netlify UI, clear the "Base directory" field too.
 
 [build]
-  base = "kerbside"
   command = "npm run build"
   publish = "web/dist"
 
