@@ -241,7 +241,7 @@ export function App() {
   const ctaLabel = dest || query.trim() ? "Find parking" : "Park here and now";
 
   return (
-    <div className="app">
+    <div className={"app" + (overlayOpen ? " landing-open" : "")}>
       <MapView
         dest={dest}
         window={window_}

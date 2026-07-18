@@ -1,6 +1,6 @@
-# Kerbside — London parking finder
+# Park Up — London parking finder
 
-Enter a destination (postcode or place) and an arrive/leave window; Kerbside evaluates
+Enter a destination (postcode or place) and an arrive/leave window; Park Up evaluates
 Controlled Parking Zones, paid bays, car parks, resident bays, single yellows and free
 streets around it, then ranks them with badges: **Best Overall**, **Best Free**,
 **Closest**, **Cheapest Paid**.
@@ -11,12 +11,11 @@ streets around it, then ranks them with badges: **Best Overall**, **Best Free**,
   (`evaluate(dest, start, end, dataset)`), plus the demo dataset. Money is integer
   pence internally; all time logic runs in Europe/London local time. Vitest covers the
   7 SPEC §6 scenarios and the cost-model edge cases.
-- `web/` — Vite + React + TypeScript + Leaflet app: glass landing overlay
-  ("Park here and now" / address + date + time form), full-bleed map with zone
-  polygons, ranked results with badges, Google Maps deep links, postcodes.io
-  geocoding with offline district fallback. It's an installable PWA (see below).
-- `prototype/index.html` — the original single-file prototype, kept untouched as the
-  behavioural reference.
+- `web/` — Vite + React + TypeScript + Leaflet app: a map-forward landing
+  splash ("Type an address" / "Park here and now"), full-bleed map with zone
+  polygons, ranked results with badges, a "last updated" + "Update me" sign-photo
+  report flow, Google Maps deep links, and postcodes.io geocoding with offline
+  district fallback. It's an installable PWA (see below).
 - `data/` — ETL (`npm run etl`) with per-source adapters in `data/sources/`:
   real London borough boundaries (snapshot committed in `data/raw/`) and
   per-zone Camden CPZs from the borough's open-data portal (dataset discovered
@@ -45,8 +44,8 @@ The web app is a Progressive Web App: responsive for phones and desktops, and
 installable ("downloadable") from any Chromium browser or iOS Safari when served
 over HTTPS (or localhost):
 
-- **Android / Chrome / Edge / desktop Chrome:** use the "Install Kerbside on this
-  device" button on the landing card, or the install icon in the address bar.
+- **Android / Chrome / Edge / desktop Chrome:** use the "Install Park Up on this
+  device" button on the landing screen, or the install icon in the address bar.
 - **iPhone / iPad (Safari):** Share → "Add to Home Screen".
 
 Once installed it opens standalone (no browser chrome), keeps the app shell and
@@ -73,5 +72,6 @@ Four data tiers, most precise first (`zoneAt` returns the first match):
 4. **Everywhere else** — treated as uncontrolled, with an explicit "check
    signage" caveat.
 
-Next: more per-zone sources (Islington, Westminster), parsed tariff tables, and
-kerb-level bay data — see `docs/DATA_PIPELINE.md`.
+Next: expand pan-London coverage via layered sources (Mapillary detected signs
+first, then TfL red routes and more borough portals) — see
+`docs/DATA_PIPELINE.md`.

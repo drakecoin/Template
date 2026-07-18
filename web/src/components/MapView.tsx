@@ -87,8 +87,30 @@ const MIN_OPTIONS_TIGHT = 3;
 const OPTIONS_WHEN_ZOOMING_OUT = 5;
 
 /**
+ * Padding (in px) so fitBounds frames content into the map area the results
+ * sheet doesn't cover: below it in portrait, right of it on desktop. Keeps the
+ * car centred in the *visible* region rather than the whole page.
+ */
+function visiblePadding(map: L.Map): { tl: L.PointTuple; br: L.PointTuple } {
+  const gut = 40;
+  const sheet = document.querySelector<HTMLElement>(".results");
+  if (!sheet) return { tl: [gut, gut], br: [gut, gut] };
+  const m = map.getContainer().getBoundingClientRect();
+  const r = sheet.getBoundingClientRect();
+  if (window.innerWidth >= 760) {
+    // left-hand panel — pad the left by how far it reaches across the map
+    const left = Math.max(0, r.right - m.left);
+    return { tl: [left + gut, gut], br: [gut, gut] };
+  }
+  // bottom sheet — pad the bottom by how much of the map it hides
+  const bottom = Math.max(0, m.bottom - r.top);
+  return { tl: [gut, gut], br: [gut, bottom + gut] };
+}
+
+/**
  * Frame the destination on first load: start at ~200 m; if fewer than 3 options
  * fall inside that, widen just enough to show up to 5 of the closest options.
+ * Framing is offset for the results sheet so the car sits in the visible area.
  */
 function fitToInitialOptions(map: L.Map, dest: LatLng | null, results: EvaluatedOption[]): void {
   const valid = results.filter((r) => r.valid).sort((a, b) => a.km - b.km);
@@ -101,11 +123,19 @@ function fitToInitialOptions(map: L.Map, dest: LatLng | null, results: Evaluated
     radiusKm = Math.max(INITIAL_RADIUS_KM, valid[n - 1].km);
   }
 
+  const { tl, br } = visiblePadding(map);
+  const fitOpts: L.FitBoundsOptions = {
+    paddingTopLeft: tl,
+    paddingBottomRight: br,
+    maxZoom: 17,
+    animate: true,
+  };
+
   if (!dest) {
     const pts = valid
       .filter((r) => r.km <= radiusKm)
       .map((r) => [r.spot.lat, r.spot.lng] as [number, number]);
-    if (pts.length) map.fitBounds(L.latLngBounds(pts), { padding: [40, 40], maxZoom: 17, animate: true });
+    if (pts.length) map.fitBounds(L.latLngBounds(pts), fitOpts);
     return;
   }
 
@@ -118,7 +148,7 @@ function fitToInitialOptions(map: L.Map, dest: LatLng | null, results: Evaluated
       [dest.lat - latDelta, dest.lng - lngDelta],
       [dest.lat + latDelta, dest.lng + lngDelta],
     ),
-    { padding: [40, 40], maxZoom: 17, animate: true },
+    fitOpts,
   );
 }
 

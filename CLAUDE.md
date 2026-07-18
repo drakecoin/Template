@@ -1,34 +1,38 @@
-# Kerbside — London Parking Finder
+# Park Up — London Parking Finder
 
 ## What this is
-A parking-finder app for London. User enters a destination (postcode or place) and an
-arrive/leave time window; the app evaluates Controlled Parking Zones (CPZs), paid bays,
-car parks, resident bays, single yellows and free streets, then ranks them with badges:
+A parking-finder web app for London (formerly "Kerbside" — the brand is **Park Up**;
+internal npm package names still use the `kerbside` prefix). User enters a destination
+(postcode or place) and an arrive/leave time window; the app evaluates Controlled
+Parking Zones (CPZs), paid bays, car parks, resident bays, single yellows, free
+streets, and no-stopping/no-loading areas, then ranks the parkable ones with badges:
 Best Overall, Best Free, Closest, Cheapest Paid.
 
-A fully working single-file prototype lives at `prototype/index.html` (vanilla JS +
-Leaflet + OSM tiles). **It is the source of truth for product behaviour and the ranking
-engine.** Read it before writing anything.
-
 ## Current state
-- Prototype is complete and tested: search (postcode via postcodes.io with offline
-  district fallback, plus curated places), time presets, CPZ time-overlap engine,
-  cost model, badge ranking, map with zone polygons, Google Maps deep links,
-  collapsible panel / bottom-sheet layout.
-- Zone hours for Islington (Zone B Angel), Camden (CA-F(n), CA-D, CA-U) and
-  Westminster (E/F/G, A/D) were verified against borough websites (July 2026).
-  Other zones + all tariffs/bay positions are indicative demo data.
-- Zone *boundaries* are hand-drawn polygons — replacing them with real borough
-  GeoJSON is the top priority (see docs/DATA_PIPELINE.md).
+- Live: deployed on **Netlify**, git-based auto-deploy from the **`main`** branch of
+  `github.com/drakecoin/Template` (config in root `netlify.toml`; no `base` — the repo
+  IS the app). Fully client-side; no backend.
+- The app is a repo-root npm-workspaces monorepo (`packages/engine`, `web`, `data`).
+- First screen is a map-forward splash (clear map, "Park Up", "Type an address",
+  hero P location-pin, "Park here and now").
+- Real Camden per-zone CPZ boundaries + hours import from the borough's open-data
+  portal (Socrata); other boroughs use real-boundary borough-level fallbacks. Hours
+  for Islington Zone B, Camden CA-F(n)/CA-D/CA-U and Westminster E/F/G & A/D were
+  verified against borough sites (July 2026). Tariffs/bay positions elsewhere are
+  indicative and labelled as such.
+- "Update me" flow: users photograph a street sign; EXIF GPS (or device location, or
+  manual) + a thumbnail are logged to localStorage as a dated report. Results show a
+  per-zone "Last updated" date.
+- Data expansion plan (all London) is in `docs/DATA_PIPELINE.md`; next source is
+  **Mapillary** detected traffic signs (do NOT scrape Google Street View — ToS).
 
-## Target architecture (proposed — challenge if you disagree)
-- `web/` — Vite + React + TypeScript + Leaflet (react-leaflet). Port the prototype UI.
-- `api/` — small Node (Fastify) or serverless API: `/parking/search?lat&lng&from&to`
-  returns evaluated, ranked options. Engine logic ported from the prototype verbatim
-  first, then extended.
-- `data/` — ETL scripts that ingest borough CPZ GeoJSON + tariff tables into a single
-  normalised `zones.json` / PostGIS. See docs/DATA_PIPELINE.md for sources.
-- Keep the engine pure and unit-tested: `evaluate(dest, start, end, dataset)`.
+## Architecture
+- `web/` — Vite + React + TypeScript + Leaflet. Port target for all UI.
+- `packages/engine/` — pure, strictly-typed ranking engine
+  (`evaluate(dest, start, end, dataset)`), consumed by `web` directly from TS source.
+- `data/` — ETL that ingests borough CPZ GeoJSON + hours into normalised
+  `packages/engine/src/data/zones.{precise,boroughs}.json`. Adapters in
+  `data/sources/`.
 
 ## Engine rules to preserve (tested behaviours)
 1. CPZ overlap is computed per calendar day against `sched[]` entries
@@ -39,33 +43,33 @@ engine.** Read it before writing anything.
 3. Resident bays & single yellows: valid only when controlled overlap is zero.
 4. Car parks: hourly rate with 24h day-max cap; evening flat rate applies only when
    the stay starts 18:00–07:00 and ends by 08:00 next morning.
-5. Score = cost + walkMinutes × 0.35 (£/min walk penalty). Badges assigned after
-   sorting valid options. Invalid options are shown greyed-out with a human reason.
-6. Never present a resident-only or restricted option as parkable during controlled
+5. No-stopping (`noStop`, red routes) is never parkable. No-loading (`noLoad`) is an
+   advisory, never a ranked bay: its note is time-aware against the posted ban hours.
+6. Score = cost + walkMinutes × 0.35 (£/min walk penalty). Badges assigned after
+   sorting valid options; restriction areas never receive badges. Invalid options are
+   shown greyed-out with a human reason.
+7. Never present a resident-only or restricted option as parkable during controlled
    hours — a wrong answer here means a £130 PCN for the user.
 
 ## Conventions
 - TypeScript strict. No `any` in the engine.
-- Unit tests for the engine are mandatory for every change (Vitest). Port the five
-  scenario tests described in docs/SPEC.md §6 first.
+- Unit tests for the engine are mandatory for every change (Vitest); keep the SPEC §6
+  scenarios (`docs/SPEC.md`) passing.
 - Money in integer pence internally; format at the edges.
-- Times: all engine logic in Europe/London local time; beware DST when porting.
-- UI: keep the existing design system (tokens in the prototype's `:root`) — bright
-  "signage" aesthetic, P-blue #1D6FEB, signal yellow #FFCF33, ink #101A33.
-- Data provenance: every zone record carries `src` (borough URL) and `verified`
-  (bool + date). Show "indicative" labelling in the UI for unverified data.
+- Times: all engine logic in Europe/London local time; beware DST.
+- UI design system tokens live in `web/src/styles.css` `:root` — bright "signage"
+  aesthetic: P-blue #1D6FEB, ink #0E1526, serif accents (`--serif`) for the brand.
+- Data provenance: every zone record carries `src`, `verified`, `checkedAt`. The UI
+  labels unverified data "indicative".
 
-## Commands (once scaffolded)
-- `npm run dev` in `web/` — run the app
-- `npm test` — engine unit tests (must pass before any commit)
-- `npm run etl` in `data/` — rebuild zones.json from borough sources
+## Commands
+- `npm run dev` — run the web app (Vite)
+- `npm test` — engine + data unit tests (must pass before any commit)
+- `npm run build` — typecheck + production build (output `web/dist`)
+- `npm run etl` — rebuild zone data from borough sources (in `data/`)
 
-## Suggested first tasks (in order)
-1. Scaffold `web/` (Vite React TS), port prototype 1:1, keep `prototype/index.html`
-   untouched as reference.
-2. Extract the engine into `packages/engine` with Vitest tests (SPEC §6 scenarios).
-3. Build `data/` ETL for Camden + Islington GeoJSON (docs/DATA_PIPELINE.md).
-4. Swap hand-drawn polygons for real boundaries; point-in-polygon zone lookup for
-   any searched destination (currently bays are hard-linked to zones by id).
-5. Live car-park availability/pricing via an aggregator API (Parkopedia/AppyParking)
-   behind a provider interface.
+## Next tasks (see docs/DATA_PIPELINE.md)
+1. Mapillary detected-sign importer → dated restriction/hours signals (in progress).
+2. TfL red routes → pan-London `noStop`.
+3. Config-driven borough registry so new Socrata/ArcGIS boroughs are declarative.
+4. Parsed tariff tables; kerb-level bay data.

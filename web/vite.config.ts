@@ -9,8 +9,8 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["apple-touch-icon.png"],
       manifest: {
-        name: "Kerbside — London parking, sorted",
-        short_name: "Kerbside",
+        name: "Park Up — London parking, sorted",
+        short_name: "Park Up",
         description:
           "Find the smartest parking spot in London: zones, bays, car parks and free streets ranked for your exact times.",
         theme_color: "#1D6FEB",

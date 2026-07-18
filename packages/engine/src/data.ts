@@ -1,4 +1,5 @@
 import { BOROUGH_ZONES } from "./boroughs.js";
+import { MAPILLARY_SPOTS } from "./importedMapillary.js";
 import { IMPORTED_SPOTS } from "./importedSpots.js";
 import { PRECISE_ZONES } from "./precise.js";
 import type { Dataset, Spot, Zone } from "./types.js";
@@ -277,7 +278,10 @@ export const PC_DISTRICTS: Record<string, [number, number]> = {
  */
 export const ALL_ZONES: Zone[] = [...PRECISE_ZONES, ...ZONES, ...BOROUGH_ZONES];
 
-/** Curated spots plus kerb-level bays imported from borough open data / OSM. */
-export const ALL_SPOTS: Spot[] = [...SPOTS, ...IMPORTED_SPOTS];
+/**
+ * Curated spots, kerb-level bays imported from borough open data / OSM, and
+ * no-stopping/no-loading areas from Mapillary detected signs.
+ */
+export const ALL_SPOTS: Spot[] = [...SPOTS, ...IMPORTED_SPOTS, ...MAPILLARY_SPOTS];
 
 export const DEFAULT_DATASET: Dataset = { zones: ALL_ZONES, spots: ALL_SPOTS };

@@ -218,7 +218,7 @@ export function ResultsSheet({
       <div className="res-scroll" ref={scrollRef}>
         {!results ? (
           <div className="empty">
-            Kerbside checks controlled parking zones, paid bays, car parks and free streets around
+            Park Up checks controlled parking zones, paid bays, car parks and free streets around
             your destination — and tells you the best place to leave the car for <b>your exact times</b>.
           </div>
         ) : !results.length ? (

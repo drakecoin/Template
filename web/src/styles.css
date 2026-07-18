@@ -15,6 +15,7 @@
   --radius:20px;
   --shadow:0 12px 40px rgba(14,21,38,.16);
   --shadow-soft:0 4px 16px rgba(14,21,38,.10);
+  --serif:Georgia,"Times New Roman","Iowan Old Style",serif;
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body,#root{height:100%}
@@ -26,6 +27,11 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 input{font-family:inherit;color:inherit}
 
 .app{position:relative;height:100%;overflow:hidden}
+/* keep the first screen clean: hide map chrome + zone overlays behind the splash */
+.app.landing-open .legend,
+.app.landing-open .layer-toggle,
+.app.landing-open .leaflet-control-zoom,
+.app.landing-open .leaflet-overlay-pane{display:none}
 
 /* ---------- map ---------- */
 .map-shell{position:absolute;inset:0}
@@ -72,8 +78,40 @@ input{font-family:inherit;color:inherit}
 .toast.show{opacity:1}
 
 /* ---------- landing overlay ---------- */
-.hero{
-  position:absolute;inset:0;z-index:1400;display:grid;place-items:center;padding:20px;
+.hero{position:absolute;inset:0;z-index:1400}
+
+/* ---------- first screen: map-forward splash ---------- */
+.hero.splash{
+  display:flex;flex-direction:column;align-items:center;text-align:center;
+  padding:calc(6vh + env(safe-area-inset-top)) 24px calc(6vh + env(safe-area-inset-bottom));
+  /* let the live map read through; feather the top & bottom for text legibility */
+  background:
+    linear-gradient(to bottom, rgba(238,242,250,.72) 0%, rgba(238,242,250,0) 26%),
+    linear-gradient(to top, rgba(238,242,250,.72) 0%, rgba(238,242,250,0) 26%);
+}
+.brand-title{
+  font-family:var(--serif);font-weight:700;font-size:clamp(34px,10vw,52px);
+  color:var(--accent);letter-spacing:.01em;text-shadow:0 1px 10px rgba(255,255,255,.8);
+}
+.splash-mid{
+  margin:auto 0;display:flex;flex-direction:column;align-items:center;gap:clamp(20px,6vh,52px);
+}
+.splash-address{
+  font-family:var(--serif);font-style:italic;font-size:clamp(24px,7vw,34px);color:var(--ink);
+  padding:6px 18px;text-shadow:0 1px 10px rgba(255,255,255,.9);transition:opacity .15s;
+}
+.splash-address:active{opacity:.6}
+.splash-pin{width:clamp(64px,17vw,88px);height:auto;filter:drop-shadow(0 6px 14px rgba(14,21,38,.32))}
+.splash-cta{
+  font-family:var(--serif);font-style:italic;font-size:clamp(20px,6vw,28px);color:var(--ink);
+  padding:6px 18px;text-shadow:0 1px 10px rgba(255,255,255,.9);transition:opacity .15s;
+}
+.splash-cta:active{opacity:.6}
+.splash-install{margin-top:14px}
+
+/* ---------- expanded search form ---------- */
+.hero.expanded{
+  display:grid;place-items:center;padding:20px;
   background:rgba(232,238,249,.55);
   backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);
 }
@@ -84,16 +122,8 @@ input{font-family:inherit;color:inherit}
   display:flex;flex-direction:column;gap:14px;
 }
 .hero-brand{display:flex;align-items:center;gap:9px;justify-content:center;margin-bottom:2px}
-.p-badge{
-  width:28px;height:28px;border-radius:8px;background:var(--accent);color:#fff;
-  display:grid;place-items:center;font-weight:800;font-size:16px;flex:0 0 auto;
-}
-.hero-name{font-size:17px;font-weight:800;letter-spacing:-.02em}
-.hero-hint{
-  width:100%;text-align:center;font-size:17px;color:var(--ink-soft);background:var(--field);
-  border-radius:16px;padding:17px 16px;transition:background .15s;
-}
-.hero-hint:hover{background:rgba(14,21,38,.08)}
+.brand-pin{width:24px;height:32px;flex:0 0 auto}
+.hero-name{font-family:var(--serif);font-size:22px;font-weight:700;color:var(--accent);letter-spacing:.01em}
 .hero-form{display:flex;flex-direction:column;gap:10px}
 .hero-input{
   width:100%;font-size:17px;background:#fff;border:2px solid transparent;border-radius:16px;
