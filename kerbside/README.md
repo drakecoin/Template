@@ -17,10 +17,13 @@ streets around it, then ranks them with badges: **Best Overall**, **Best Free**,
   geocoding with offline district fallback. It's an installable PWA (see below).
 - `prototype/index.html` — the original single-file prototype, kept untouched as the
   behavioural reference.
-- `data/` — ETL (`npm run etl`) that fetches real London borough boundary GeoJSON
-  (committed snapshot in `data/raw/` as offline fallback), joins it with the
-  curated CPZ config in `data/config.ts`, simplifies the rings, and writes
-  `packages/engine/src/data/zones.boroughs.json` for the engine to consume.
+- `data/` — ETL (`npm run etl`) with per-source adapters in `data/sources/`:
+  real London borough boundaries (snapshot committed in `data/raw/`) and
+  per-zone Camden CPZs from the borough's open-data portal (dataset discovered
+  via the Socrata catalogue; free-text controlled hours parsed by
+  `data/schedule.ts`). Sources snapshot on success, use the snapshot offline,
+  and are skipped cleanly when neither is available. Output goes to
+  `packages/engine/src/data/zones.{precise,boroughs}.json`.
 - `docs/` — product/engine spec (`SPEC.md`) and the real-data plan (`DATA_PIPELINE.md`).
 - `CLAUDE.md` — project context and conventions for future work.
 
@@ -53,17 +56,22 @@ is deployed. To self-host, serve the static `web/dist/` output (from
 
 ## Data status
 
-Three data tiers, most precise first (`zoneAt` returns the first match):
+Four data tiers, most precise first (`zoneAt` returns the first match):
 
-1. **Curated zones** — 13 hand-drawn CPZs; hours for Islington Zone B, Camden
+1. **Imported per-zone CPZs** (`zones.precise.json`) — real zone polygons from
+   borough open-data portals (Camden wired up; more sources slot into
+   `data/sources/`). Hours use our verified table where we have one, else the
+   portal's own hours text parsed by `data/schedule.ts`, else the borough
+   default — only the first is marked *verified*. Empty until `npm run etl`
+   has run with portal access.
+2. **Curated zones** — 13 hand-drawn CPZs; hours for Islington Zone B, Camden
    CA-F(n)/CA-D/CA-U and Westminster E/F/G & A/D follow the borough websites
    (checked July 2026, linked from each zone's map popup).
-2. **Borough fallbacks** — real boundary polygons for 11 inner-London boroughs
-   with (nearly) borough-wide CPZ coverage, imported by `data/etl.ts` and carrying
-   each borough's most common hours. Always labelled *indicative*, because hours
-   vary zone by zone within a borough.
-3. **Everywhere else** — treated as uncontrolled, with an explicit "check signage"
-   caveat.
+3. **Borough fallbacks** — real boundary polygons for 11 inner-London boroughs
+   with (nearly) borough-wide CPZ coverage, carrying each borough's most common
+   hours. Always labelled *indicative*.
+4. **Everywhere else** — treated as uncontrolled, with an explicit "check
+   signage" caveat.
 
-The next milestone is replacing tier 2 with per-zone borough GeoJSON + parsed
-tariff tables (see `docs/DATA_PIPELINE.md`).
+Next: more per-zone sources (Islington, Westminster), parsed tariff tables, and
+kerb-level bay data — see `docs/DATA_PIPELINE.md`.

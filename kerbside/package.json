@@ -11,7 +11,7 @@
     "dev": "npm run dev -w kerbside-web",
     "build": "npm run build -w kerbside-web",
     "preview": "npm run preview -w kerbside-web",
-    "test": "npm run test -w @kerbside/engine",
+    "test": "npm run test -w @kerbside/engine && npm run test -w kerbside-data",
     "etl": "npm run etl -w kerbside-data",
     "typecheck": "npm run typecheck -w @kerbside/engine && npm run typecheck -w kerbside-web && npm run typecheck -w kerbside-data"
   }

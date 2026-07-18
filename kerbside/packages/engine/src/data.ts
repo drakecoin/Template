@@ -1,4 +1,5 @@
 import { BOROUGH_ZONES } from "./boroughs.js";
+import { PRECISE_ZONES } from "./precise.js";
 import type { Dataset, Spot, Zone } from "./types.js";
 
 export interface Place {
@@ -337,9 +338,10 @@ export const PC_DISTRICTS: Record<string, [number, number]> = {
 };
 
 /**
- * Specific curated zones first, then borough-level fallbacks from real boundary
- * data — zoneAt() returns the first match, so precise records win.
+ * Most precise first — zoneAt() returns the first match:
+ * imported per-zone CPZs (real polygons from borough portals), then the
+ * curated hand-drawn zones, then borough-level fallbacks on real boundaries.
  */
-export const ALL_ZONES: Zone[] = [...ZONES, ...BOROUGH_ZONES];
+export const ALL_ZONES: Zone[] = [...PRECISE_ZONES, ...ZONES, ...BOROUGH_ZONES];
 
 export const DEFAULT_DATASET: Dataset = { zones: ALL_ZONES, spots: SPOTS };
