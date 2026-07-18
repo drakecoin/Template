@@ -35,6 +35,8 @@ export interface Spot {
   dayMaxPence?: number;
   /** Car-park evening flat rate in pence. */
   evePence?: number;
+  /** Synthesised at the searched destination rather than a curated location. */
+  virtual?: boolean;
   note: string;
 }
 

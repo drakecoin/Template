@@ -2,9 +2,11 @@ import {
   fmtCost,
   SEARCH_RADIUS_KM,
   WALK_MIN_PER_KM,
+  zoneHoursText,
   type Badge,
   type EvaluatedOption,
   type Spot,
+  type Zone,
 } from "@kerbside/engine";
 import { useEffect, useRef, useState } from "react";
 import { fmtDT, gmapsLink } from "../time";
@@ -15,6 +17,7 @@ interface Props {
   results: EvaluatedOption[] | null;
   window: { start: Date; end: Date } | null;
   destName: string;
+  destZone: Zone | null;
   selectedIdx: number | null;
   onSelectCard: (idx: number) => void;
 }
@@ -93,7 +96,14 @@ function Card({
   );
 }
 
-export function ResultsSheet({ results, window: win, destName, selectedIdx, onSelectCard }: Props) {
+export function ResultsSheet({
+  results,
+  window: win,
+  destName,
+  destZone,
+  selectedIdx,
+  onSelectCard,
+}: Props) {
   const [sheet, setSheet] = useState<SheetState>("normal");
   const [naOpen, setNaOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -146,6 +156,12 @@ export function ResultsSheet({ results, window: win, destName, selectedIdx, onSe
             Math.round(SEARCH_RADIUS_KM * WALK_MIN_PER_KM) + "-min walk"
           )}
         </p>
+        {results && destZone && (
+          <p className="res-zone">
+            You're in {destZone.name} — controlled {zoneHoursText(destZone)}
+            {destZone.verified ? "" : " (indicative)"}
+          </p>
+        )}
       </div>
       <div className="res-scroll" ref={scrollRef}>
         {!results ? (

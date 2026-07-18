@@ -56,6 +56,54 @@ export function zoneActiveDuring(zone: Zone, start: Date, end: Date): boolean {
   return controlledOverlapMin(zone, start, end) > 0;
 }
 
+/** Ray-casting point-in-polygon test (poly is [lat, lng] vertices). */
+export function pointInPolygon(pt: LatLng, poly: [number, number][]): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [lat1, lng1] = poly[i];
+    const [lat2, lng2] = poly[j];
+    const intersects =
+      (lng1 > pt.lng) !== (lng2 > pt.lng) &&
+      pt.lat < ((lat2 - lat1) * (pt.lng - lng1)) / (lng2 - lng1) + lat1;
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
+/** The CPZ whose (hand-drawn, indicative) boundary contains the point, if any. */
+export function zoneAt(pt: LatLng, zones: Zone[]): Zone | undefined {
+  return zones.find((z) => pointInPolygon(pt, z.poly));
+}
+
+/**
+ * On-street parking at the searched destination itself: a paid bay governed by
+ * the containing zone's schedule, or an uncontrolled street when the point is
+ * outside every zone we know. Always labelled indicative — data is zone-level,
+ * not kerb-level.
+ */
+export function destinationStreetSpot(dest: LatLng, zones: Zone[]): Spot {
+  const zone = zoneAt(dest, zones);
+  if (zone) {
+    return {
+      n: "Streets at your destination",
+      type: "paid",
+      zone: zone.id,
+      lat: dest.lat,
+      lng: dest.lng,
+      virtual: true,
+      note: "Zone-level estimate — always check signage on the street",
+    };
+  }
+  return {
+    n: "Streets at your destination",
+    type: "freeSt",
+    lat: dest.lat,
+    lng: dest.lng,
+    virtual: true,
+    note: "No controls in our dataset — check signage carefully",
+  };
+}
+
 export interface CarParkCost {
   costPence: number;
   label: string;
@@ -115,16 +163,25 @@ export function zoneHoursText(z: Zone): string {
     .join(", ");
 }
 
+export interface EvaluateOptions {
+  /** Add a synthesised on-street option at the destination itself (zone lookup by polygon). */
+  destinationStreets?: boolean;
+}
+
 export function evaluate(
   dest: LatLng,
   start: Date,
   end: Date,
   dataset: Dataset = DEFAULT_DATASET,
+  opts: EvaluateOptions = {},
 ): EvaluatedOption[] {
   const zoneById = new Map(dataset.zones.map((z) => [z.id, z]));
   const out: EvaluatedOption[] = [];
+  const spots = opts.destinationStreets
+    ? [...dataset.spots, destinationStreetSpot(dest, dataset.zones)]
+    : dataset.spots;
 
-  for (const spot of dataset.spots) {
+  for (const spot of spots) {
     const km = haversineKm(dest, spot);
     if (km > SEARCH_RADIUS_KM) continue;
     const walkMin = walkMinutes(km);
@@ -198,6 +255,7 @@ export function evaluate(
       r.warn = "Popular: arrive early";
     }
 
+    if (spot.virtual) r.note += " · " + spot.note;
     r.score = r.valid ? r.costPence + r.walkMin * WALK_PENALTY_PENCE_PER_MIN : Infinity;
     out.push(r);
   }

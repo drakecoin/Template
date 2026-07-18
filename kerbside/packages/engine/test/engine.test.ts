@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   carParkCost,
   controlledOverlapMin,
+  DEFAULT_DATASET,
   evaluate,
+  pointInPolygon,
   SPOTS,
+  zoneAt,
   ZONES,
   type EvaluatedOption,
 } from "../src/index.js";
@@ -107,6 +110,57 @@ describe("SPEC §6 scenarios — Camden Town", () => {
       expect(r.valid, r.spot.n).toBe(true);
       expect(r.costPence, r.spot.n).toBe(0);
     }
+  });
+});
+
+describe("destination streets (zone lookup by polygon)", () => {
+  // Real-postcode locations reported in user testing:
+  const N6_5TS = { lat: 51.5723, lng: -0.1455 }; // Highgate, in CA-U (Mon–Fri 10:00–12:00)
+  const N1_2RE = { lat: 51.5385, lng: -0.0955 }; // Essex Road, in Islington Zone B
+
+  it("zoneAt finds the containing zone, or nothing outside every polygon", () => {
+    expect(zoneAt(N6_5TS, ZONES)?.id).toBe("caC");
+    expect(zoneAt(N1_2RE, ZONES)?.id).toBe("isA");
+    expect(zoneAt({ lat: 51.6, lng: 0.2 }, ZONES)).toBeUndefined();
+    // Wharf Road stays just outside the widened Islington boundary
+    expect(pointInPolygon({ lat: 51.5297, lng: -0.0948 }, ZONES[0].poly)).toBe(false);
+  });
+
+  it("N6 5TS on a Saturday: your own street is free and wins (zone only runs Mon–Fri 10–12)", () => {
+    const res = evaluate(N6_5TS, d(18, 10), d(18, 12), DEFAULT_DATASET, {
+      destinationStreets: true,
+    });
+    const top = res[0];
+    expect(top.spot.n).toBe("Streets at your destination");
+    expect(top.valid).toBe(true);
+    expect(top.costPence).toBe(0);
+    expect(top.badges).toContain("best");
+  });
+
+  it("N1 2RE Saturday morning: destination street is a paid option at the zone rate, hours in the note", () => {
+    const res = evaluate(N1_2RE, d(18, 9), d(18, 11), DEFAULT_DATASET, {
+      destinationStreets: true,
+    });
+    const street = byName(res, "Streets at your destination");
+    expect(street.valid).toBe(true);
+    expect(street.costPence).toBe(1300); // £6.50/h × 2h of Sat 08:30–13:30 control
+    expect(street.note).toContain("Sat 08:30–13:30");
+    expect(street.note).toContain("check signage");
+  });
+
+  it("outside every zone the destination street is free with a data caveat", () => {
+    const res = evaluate({ lat: 51.507, lng: -0.222 }, d(14, 11), d(14, 13), DEFAULT_DATASET, {
+      destinationStreets: true,
+    });
+    const street = byName(res, "Streets at your destination");
+    expect(street.valid).toBe(true);
+    expect(street.costPence).toBe(0);
+    expect(street.note).toContain("No controls in our dataset");
+  });
+
+  it("is off by default so the SPEC §6 expectations are unchanged", () => {
+    const res = evaluate(ANGEL, d(18, 15), d(18, 18));
+    expect(res.find((r) => r.spot.n === "Streets at your destination")).toBeUndefined();
   });
 });
 

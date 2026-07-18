@@ -1,11 +1,15 @@
 import {
+  DEFAULT_DATASET,
   evaluate,
   fmtCost,
   MAX_WINDOW_HOURS,
   PLACES,
+  ZONES,
+  zoneAt,
   type EvaluatedOption,
   type LatLng,
   type Place,
+  type Zone,
 } from "@kerbside/engine";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Landing } from "./components/Landing";
@@ -34,6 +38,7 @@ export function App() {
   const [overlayOpen, setOverlayOpen] = useState(true);
   const [hasSearched, setHasSearched] = useState(false);
   const [results, setResults] = useState<EvaluatedOption[] | null>(null);
+  const [destZone, setDestZone] = useState<Zone | null>(null);
   const [window_, setWindow] = useState<StayWindow | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -90,9 +95,12 @@ export function App() {
         return;
       }
 
-      const res = evaluate(d, win.start, win.end);
+      const res = evaluate(d, win.start, win.end, DEFAULT_DATASET, {
+        destinationStreets: true,
+      });
       setWindow(win);
       setResults(res);
+      setDestZone(zoneAt(d, ZONES) ?? null);
       setHasSearched(true);
       setOverlayOpen(false);
 
@@ -209,6 +217,7 @@ export function App() {
           results={results}
           window={window_}
           destName={destName}
+          destZone={destZone}
           selectedIdx={selection?.idx ?? null}
           onSelectCard={(i) => onSelect(i, true)}
         />
