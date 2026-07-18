@@ -21,6 +21,8 @@ interface Props {
   startExpanded: boolean;
   /** A destination is already chosen — hide suggestions until the query changes. */
   destChosen: boolean;
+  /** Present when the browser offers PWA installation. */
+  onInstall: (() => void) | null;
 }
 
 export function Landing(props: Props) {
@@ -128,6 +130,11 @@ export function Landing(props: Props) {
         <p className="hero-sub">
           Checks parking zones, bays, car parks and free streets for your exact times.
         </p>
+        {props.onInstall && (
+          <button className="install-btn" onClick={props.onInstall}>
+            Install Kerbside on this device
+          </button>
+        )}
       </div>
     </div>
   );

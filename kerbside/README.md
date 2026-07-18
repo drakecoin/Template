@@ -11,9 +11,10 @@ streets around it, then ranks them with badges: **Best Overall**, **Best Free**,
   (`evaluate(dest, start, end, dataset)`), plus the demo dataset. Money is integer
   pence internally; all time logic runs in Europe/London local time. Vitest covers the
   7 SPEC §6 scenarios and the cost-model edge cases.
-- `web/` — Vite + React + TypeScript + Leaflet app, a 1:1 port of the prototype UI
-  (design tokens, collapsible panel, bottom-sheet results, zone polygons, Google Maps
-  deep links, postcodes.io geocoding with offline district fallback).
+- `web/` — Vite + React + TypeScript + Leaflet app: glass landing overlay
+  ("Park here and now" / address + date + time form), full-bleed map with zone
+  polygons, ranked results with badges, Google Maps deep links, postcodes.io
+  geocoding with offline district fallback. It's an installable PWA (see below).
 - `prototype/index.html` — the original single-file prototype, kept untouched as the
   behavioural reference.
 - `docs/` — product/engine spec (`SPEC.md`) and the real-data plan (`DATA_PIPELINE.md`).
@@ -30,6 +31,21 @@ npm run dev       # run the web app (Vite dev server)
 npm run build     # typecheck + production build
 npm run typecheck # engine + web
 ```
+
+## Installing on a phone or computer
+
+The web app is a Progressive Web App: responsive for phones and desktops, and
+installable ("downloadable") from any Chromium browser or iOS Safari when served
+over HTTPS (or localhost):
+
+- **Android / Chrome / Edge / desktop Chrome:** use the "Install Kerbside on this
+  device" button on the landing card, or the install icon in the address bar.
+- **iPhone / iPad (Safari):** Share → "Add to Home Screen".
+
+Once installed it opens standalone (no browser chrome), keeps the app shell and
+recently viewed map tiles available offline, and auto-updates when a new version
+is deployed. To self-host, serve the static `web/dist/` output (from
+`npm run build`) over HTTPS — no server-side code is required.
 
 ## Data status
 

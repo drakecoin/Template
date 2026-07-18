@@ -7,7 +7,7 @@ import {
   type LatLng,
   type Place,
 } from "@kerbside/engine";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Landing } from "./components/Landing";
 import { MapView, type Selection } from "./components/MapView";
 import { ResultsSheet } from "./components/ResultsSheet";
@@ -16,6 +16,12 @@ import { buildWindow, fmtDT, roundQuarter, toHM, toISODate, type StayWindow } fr
 
 const LONDON_BBOX = { latMin: 51.28, latMax: 51.7, lngMin: -0.51, lngMax: 0.33 };
 const ANGEL: Place = { n: "Angel, Islington", a: "N1", lat: 51.5322, lng: -0.1057 };
+
+/** Chromium's non-standard install-prompt event. */
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+}
 
 export function App() {
   const now = new Date();
@@ -32,6 +38,29 @@ export function App() {
   const [selection, setSelection] = useState<Selection | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [installEvt, setInstallEvt] = useState<BeforeInstallPromptEvent | null>(null);
+
+  useEffect(() => {
+    const onPrompt = (e: Event) => {
+      e.preventDefault();
+      setInstallEvt(e as BeforeInstallPromptEvent);
+    };
+    const onInstalled = () => setInstallEvt(null);
+    window.addEventListener("beforeinstallprompt", onPrompt);
+    window.addEventListener("appinstalled", onInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onPrompt);
+      window.removeEventListener("appinstalled", onInstalled);
+    };
+  }, []);
+
+  const onInstall = useCallback(() => {
+    if (!installEvt) return;
+    void installEvt.prompt();
+    void installEvt.userChoice.then((c) => {
+      if (c.outcome === "accepted") setInstallEvt(null);
+    });
+  }, [installEvt]);
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -218,6 +247,7 @@ export function App() {
           onEnterNoMatch={() => showToast("Try a postcode (e.g. N1 8DU) or an area name")}
           startExpanded={hasSearched}
           destChosen={dest !== null}
+          onInstall={installEvt ? onInstall : null}
         />
       )}
     </div>
