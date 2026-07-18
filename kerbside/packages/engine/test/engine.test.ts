@@ -1,12 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  ALL_ZONES,
   BOROUGH_ZONES,
   carParkCost,
   controlledOverlapMin,
-  DEFAULT_DATASET,
   evaluate,
-  pointInPolygon,
   SPOTS,
   zoneAt,
   zoneRings,
@@ -19,6 +16,12 @@ import {
 const ANGEL = { lat: 51.5322, lng: -0.1057 };
 const CAMDEN_TOWN = { lat: 51.539, lng: -0.1426 };
 
+// DEFAULT_DATASET grows as `npm run etl` imports real zones and kerb spots, so
+// machines differ. Tests pin explicit datasets: the curated demo data for the
+// SPEC scenarios, and the committed borough tier for fallback behaviour.
+const CURATED = { zones: ZONES, spots: SPOTS };
+const BOROUGH_DATASET = { zones: BOROUGH_ZONES, spots: SPOTS };
+
 const d = (day: number, h: number, m = 0) => new Date(2026, 6, day, h, m);
 
 const byName = (res: EvaluatedOption[], name: string): EvaluatedOption => {
@@ -29,7 +32,7 @@ const byName = (res: EvaluatedOption[], name: string): EvaluatedOption => {
 
 describe("SPEC §6 scenarios — Angel", () => {
   it("1. Tue 11:00–13:00: paid bays charge £13, res/yellows invalid, free street is BEST FREE", () => {
-    const res = evaluate(ANGEL, d(14, 11), d(14, 13));
+    const res = evaluate(ANGEL, d(14, 11), d(14, 13), CURATED);
 
     const duncan = byName(res, "Duncan Street bays");
     expect(duncan.valid).toBe(true);
@@ -46,7 +49,7 @@ describe("SPEC §6 scenarios — Angel", () => {
   });
 
   it("2. Tue 20:00–23:00: zone ended 18:30 so everything on-street is free; nearest bay sweeps the badges", () => {
-    const res = evaluate(ANGEL, d(14, 20), d(14, 23));
+    const res = evaluate(ANGEL, d(14, 20), d(14, 23), CURATED);
 
     for (const r of res.filter((x) => x.spot.type !== "cp")) {
       expect(r.valid, r.spot.n).toBe(true);
@@ -59,14 +62,14 @@ describe("SPEC §6 scenarios — Angel", () => {
   });
 
   it("3. Sat 15:00–18:00: Saturday control ended 13:30 — 7 free options", () => {
-    const res = evaluate(ANGEL, d(18, 15), d(18, 18));
+    const res = evaluate(ANGEL, d(18, 15), d(18, 18), CURATED);
     const free = res.filter((r) => r.valid && r.costPence === 0);
     expect(free).toHaveLength(7);
     for (const r of free) expect(r.spot.type).not.toBe("cp");
   });
 
   it("4. Fri 20:00 – Sat 08:00 overnight: free — Saturday's 08:30 start is not breached", () => {
-    const res = evaluate(ANGEL, d(17, 20), d(18, 8));
+    const res = evaluate(ANGEL, d(17, 20), d(18, 8), CURATED);
     for (const r of res.filter((x) => x.spot.type !== "cp")) {
       expect(r.valid, r.spot.n).toBe(true);
       expect(r.costPence, r.spot.n).toBe(0);
@@ -76,7 +79,7 @@ describe("SPEC §6 scenarios — Angel", () => {
   });
 
   it("5. Mon 09:00–17:00 (8h): bays invalid (4h max stay), car parks day-capped, free street wins", () => {
-    const res = evaluate(ANGEL, d(13, 9), d(13, 17));
+    const res = evaluate(ANGEL, d(13, 9), d(13, 17), CURATED);
 
     expect(byName(res, "Duncan Street bays").valid).toBe(false);
     expect(byName(res, "Charlton Place bays").valid).toBe(false);
@@ -92,7 +95,7 @@ describe("SPEC §6 scenarios — Angel", () => {
 
 describe("SPEC §6 scenarios — Camden Town", () => {
   it("6. Sat 21:00–23:00: CA-F(n) runs to 23:00 so bays still charge; car park evening rate wins", () => {
-    const res = evaluate(CAMDEN_TOWN, d(18, 21), d(18, 23));
+    const res = evaluate(CAMDEN_TOWN, d(18, 21), d(18, 23), CURATED);
 
     const bays = byName(res, "Jamestown Road bays");
     expect(bays.valid).toBe(true);
@@ -108,7 +111,7 @@ describe("SPEC §6 scenarios — Camden Town", () => {
   });
 
   it("7. Sat 23:30 – Sun 01:00: control ends 23:00, Sunday starts 09:30 — all street options free", () => {
-    const res = evaluate(CAMDEN_TOWN, d(18, 23, 30), d(19, 1));
+    const res = evaluate(CAMDEN_TOWN, d(18, 23, 30), d(19, 1), CURATED);
     for (const r of res.filter((x) => x.spot.type !== "cp")) {
       expect(r.valid, r.spot.n).toBe(true);
       expect(r.costPence, r.spot.n).toBe(0);
@@ -129,7 +132,7 @@ describe("destination streets (zone lookup by polygon)", () => {
   });
 
   it("N6 5TS on a Sunday: your own street is free and wins", () => {
-    const res = evaluate(N6_5TS, d(19, 10), d(19, 12), DEFAULT_DATASET, {
+    const res = evaluate(N6_5TS, d(19, 10), d(19, 12), BOROUGH_DATASET, {
       destinationStreets: true,
     });
     const top = res[0];
@@ -140,7 +143,7 @@ describe("destination streets (zone lookup by polygon)", () => {
   });
 
   it("N1 2RE Saturday morning: destination street is a paid option at the zone rate, hours in the note", () => {
-    const res = evaluate(N1_2RE, d(18, 9), d(18, 11), DEFAULT_DATASET, {
+    const res = evaluate(N1_2RE, d(18, 9), d(18, 11), BOROUGH_DATASET, {
       destinationStreets: true,
     });
     const street = byName(res, "Streets at your destination");
@@ -152,7 +155,7 @@ describe("destination streets (zone lookup by polygon)", () => {
 
   it("outside every zone the destination street is free with a data caveat", () => {
     // Wimbledon (Merton) — no borough fallback configured there
-    const res = evaluate({ lat: 51.42, lng: -0.21 }, d(14, 11), d(14, 13), DEFAULT_DATASET, {
+    const res = evaluate({ lat: 51.42, lng: -0.21 }, d(14, 11), d(14, 13), BOROUGH_DATASET, {
       destinationStreets: true,
     });
     const street = byName(res, "Streets at your destination");
@@ -162,7 +165,7 @@ describe("destination streets (zone lookup by polygon)", () => {
   });
 
   it("is off by default so the SPEC §6 expectations are unchanged", () => {
-    const res = evaluate(ANGEL, d(18, 15), d(18, 18));
+    const res = evaluate(ANGEL, d(18, 15), d(18, 18), CURATED);
     expect(res.find((r) => r.spot.n === "Streets at your destination")).toBeUndefined();
   });
 });
@@ -173,10 +176,10 @@ describe("borough fallback zones (real boundary data)", () => {
   const HIGHBURY = { lat: 51.548, lng: -0.1 };
 
   it("resolves points to real borough boundaries when no specific zone matches", () => {
-    expect(zoneAt(HIGHBURY, ALL_ZONES)?.id).toBe("boro-islington");
-    expect(zoneAt({ lat: 51.5504, lng: -0.1425 }, ALL_ZONES)?.id).toBe("boro-camden"); // Kentish Town
-    expect(zoneAt(ANGEL, ALL_ZONES)?.id).toBe("boro-islington"); // Angel too, until per-zone data is imported
-    expect(zoneAt({ lat: 51.42, lng: -0.21 }, ALL_ZONES)).toBeUndefined(); // Wimbledon
+    expect(zoneAt(HIGHBURY, BOROUGH_ZONES)?.id).toBe("boro-islington");
+    expect(zoneAt({ lat: 51.5504, lng: -0.1425 }, BOROUGH_ZONES)?.id).toBe("boro-camden"); // Kentish Town
+    expect(zoneAt(ANGEL, BOROUGH_ZONES)?.id).toBe("boro-islington"); // Angel too, until per-zone data is imported
+    expect(zoneAt({ lat: 51.42, lng: -0.21 }, BOROUGH_ZONES)).toBeUndefined(); // Wimbledon
   });
 
   it("imported per-zone CPZs outrank the borough fallback", () => {
@@ -199,7 +202,7 @@ describe("borough fallback zones (real boundary data)", () => {
   });
 
   it("Sat 10:30–14:30 in Islington outside the curated zones now charges for the controlled hours", () => {
-    const res = evaluate(HIGHBURY, d(18, 10, 30), d(18, 14, 30), DEFAULT_DATASET, {
+    const res = evaluate(HIGHBURY, d(18, 10, 30), d(18, 14, 30), BOROUGH_DATASET, {
       destinationStreets: true,
     });
     const street = byName(res, "Streets at your destination");
