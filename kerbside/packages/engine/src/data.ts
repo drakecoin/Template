@@ -1,4 +1,5 @@
 import { BOROUGH_ZONES } from "./boroughs.js";
+import { IMPORTED_SPOTS } from "./importedSpots.js";
 import { PRECISE_ZONES } from "./precise.js";
 import type { Dataset, Spot, Zone } from "./types.js";
 
@@ -51,14 +52,6 @@ export const ZONES: Zone[] = [
     ],
     ratePence: 650,
     maxStayHours: 4,
-    poly: [
-      [51.5405, -0.1125],
-      [51.5425, -0.098],
-      [51.539, -0.089],
-      [51.5305, -0.0925],
-      [51.5262, -0.109],
-      [51.533, -0.1135],
-    ],
   },
   {
     id: "caA",
@@ -71,12 +64,6 @@ export const ZONES: Zone[] = [
     ],
     ratePence: 800,
     maxStayHours: 4,
-    poly: [
-      [51.546, -0.151],
-      [51.546, -0.134],
-      [51.533, -0.133],
-      [51.533, -0.151],
-    ],
   },
   {
     id: "caF",
@@ -89,12 +76,6 @@ export const ZONES: Zone[] = [
     ],
     ratePence: 590,
     maxStayHours: 4,
-    poly: [
-      [51.537, -0.13],
-      [51.537, -0.117],
-      [51.5255, -0.116],
-      [51.5255, -0.13],
-    ],
   },
   {
     id: "weW",
@@ -104,12 +85,6 @@ export const ZONES: Zone[] = [
     sched: [{ days: [1, 2, 3, 4, 5, 6], from: "08:30", to: "18:30" }],
     ratePence: 890,
     maxStayHours: 4,
-    poly: [
-      [51.5185, -0.145],
-      [51.5185, -0.1175],
-      [51.5085, -0.117],
-      [51.508, -0.145],
-    ],
   },
   {
     id: "weM",
@@ -119,12 +94,6 @@ export const ZONES: Zone[] = [
     sched: [{ days: [1, 2, 3, 4, 5, 6], from: "08:30", to: "18:30" }],
     ratePence: 890,
     maxStayHours: 4,
-    poly: [
-      [51.5245, -0.158],
-      [51.5245, -0.144],
-      [51.515, -0.1435],
-      [51.515, -0.158],
-    ],
   },
   {
     id: "weV",
@@ -134,12 +103,6 @@ export const ZONES: Zone[] = [
     sched: [{ days: [1, 2, 3, 4, 5], from: "08:30", to: "18:30" }],
     ratePence: 740,
     maxStayHours: 4,
-    poly: [
-      [51.501, -0.151],
-      [51.501, -0.136],
-      [51.4915, -0.1355],
-      [51.4915, -0.151],
-    ],
   },
   {
     id: "hxS",
@@ -149,12 +112,6 @@ export const ZONES: Zone[] = [
     sched: [{ days: [1, 2, 3, 4, 5, 6], from: "08:30", to: "18:30" }],
     ratePence: 500,
     maxStayHours: 4,
-    poly: [
-      [51.533, -0.088],
-      [51.533, -0.072],
-      [51.5205, -0.071],
-      [51.5205, -0.088],
-    ],
   },
   {
     id: "swB",
@@ -164,12 +121,6 @@ export const ZONES: Zone[] = [
     sched: [{ days: [1, 2, 3, 4, 5], from: "08:30", to: "18:30" }],
     ratePence: 460,
     maxStayHours: 3,
-    poly: [
-      [51.509, -0.1],
-      [51.509, -0.082],
-      [51.5, -0.0815],
-      [51.5, -0.1],
-    ],
   },
   {
     id: "caC",
@@ -179,12 +130,6 @@ export const ZONES: Zone[] = [
     sched: [{ days: [1, 2, 3, 4, 5], from: "10:00", to: "12:00" }],
     ratePence: 450,
     maxStayHours: 2,
-    poly: [
-      [51.576, -0.152],
-      [51.576, -0.14],
-      [51.567, -0.1395],
-      [51.567, -0.152],
-    ],
   },
   {
     id: "caH",
@@ -194,12 +139,6 @@ export const ZONES: Zone[] = [
     sched: [{ days: [1, 2, 3, 4, 5], from: "09:00", to: "18:30" }],
     ratePence: 490,
     maxStayHours: 4,
-    poly: [
-      [51.561, -0.184],
-      [51.561, -0.17],
-      [51.551, -0.1695],
-      [51.551, -0.184],
-    ],
   },
   {
     id: "kcN",
@@ -209,12 +148,6 @@ export const ZONES: Zone[] = [
     sched: [{ days: [1, 2, 3, 4, 5, 6], from: "08:30", to: "18:30" }],
     ratePence: 650,
     maxStayHours: 4,
-    poly: [
-      [51.5145, -0.204],
-      [51.5145, -0.188],
-      [51.504, -0.1875],
-      [51.504, -0.204],
-    ],
   },
   {
     id: "laC",
@@ -224,12 +157,6 @@ export const ZONES: Zone[] = [
     sched: [{ days: [1, 2, 3, 4, 5], from: "08:30", to: "18:30" }],
     ratePence: 440,
     maxStayHours: 4,
-    poly: [
-      [51.468, -0.145],
-      [51.468, -0.13],
-      [51.457, -0.1295],
-      [51.457, -0.145],
-    ],
   },
   {
     id: "grT",
@@ -239,12 +166,6 @@ export const ZONES: Zone[] = [
     sched: [{ days: [1, 2, 3, 4, 5, 6], from: "09:00", to: "18:30" }],
     ratePence: 380,
     maxStayHours: 3,
-    poly: [
-      [51.4865, -0.016],
-      [51.4865, -0.001],
-      [51.477, -0.0005],
-      [51.477, -0.016],
-    ],
   },
 ];
 
@@ -344,4 +265,7 @@ export const PC_DISTRICTS: Record<string, [number, number]> = {
  */
 export const ALL_ZONES: Zone[] = [...PRECISE_ZONES, ...ZONES, ...BOROUGH_ZONES];
 
-export const DEFAULT_DATASET: Dataset = { zones: ALL_ZONES, spots: SPOTS };
+/** Curated spots plus kerb-level bays imported from borough open data / OSM. */
+export const ALL_SPOTS: Spot[] = [...SPOTS, ...IMPORTED_SPOTS];
+
+export const DEFAULT_DATASET: Dataset = { zones: ALL_ZONES, spots: ALL_SPOTS };

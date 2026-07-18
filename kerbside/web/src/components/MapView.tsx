@@ -94,11 +94,11 @@ export function MapView({ dest, window: win, results, selection, onSelect, toast
         "</a>";
       for (const ring of zoneRings(z)) {
         L.polygon(ring, {
-          color: active ? (borough ? "#D9A93E" : "#E8A200") : "#AEB7C9",
-          weight: borough ? 1 : 1.6,
-          dashArray: borough ? "2 6" : "5 5",
-          fillColor: active ? "#FFCF33" : "#C9D1E0",
-          fillOpacity: borough ? (active ? 0.06 : 0.03) : active ? 0.16 : 0.07,
+          color: active ? (borough ? "#C98A1B" : "#D97706") : "#94A3B8",
+          weight: borough ? 2 : 2.5,
+          dashArray: borough ? "6 8" : undefined,
+          fillColor: active ? "#FFC533" : "#C9D1E0",
+          fillOpacity: borough ? (active ? 0.08 : 0.03) : active ? 0.22 : 0.08,
         })
           .bindPopup(popup)
           .addTo(layer);

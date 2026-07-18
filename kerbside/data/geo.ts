@@ -72,3 +72,24 @@ export function toLatLngRing(ring: number[][], tolerance: number): number[][] {
     Math.round(lng * 1e5) / 1e5,
   ]);
 }
+
+/** Centroid of any GeoJSON geometry (mean of its coordinates), as {lat, lng}. */
+export function centroid(geometry: { type: string; coordinates: unknown }): {
+  lat: number;
+  lng: number;
+} | null {
+  const points: number[][] = [];
+  const collect = (c: unknown): void => {
+    if (!Array.isArray(c)) return;
+    if (typeof c[0] === "number" && typeof c[1] === "number") {
+      points.push(c as number[]);
+    } else {
+      for (const child of c) collect(child);
+    }
+  };
+  collect(geometry.coordinates);
+  if (!points.length) return null;
+  const lng = points.reduce((s, p) => s + p[0], 0) / points.length;
+  const lat = points.reduce((s, p) => s + p[1], 0) / points.length;
+  return { lat: Math.round(lat * 1e5) / 1e5, lng: Math.round(lng * 1e5) / 1e5 };
+}

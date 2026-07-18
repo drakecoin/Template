@@ -117,20 +117,19 @@ describe("SPEC §6 scenarios — Camden Town", () => {
 });
 
 describe("destination streets (zone lookup by polygon)", () => {
-  // Real-postcode locations reported in user testing:
-  const N6_5TS = { lat: 51.5723, lng: -0.1455 }; // Highgate, in CA-U (Mon–Fri 10:00–12:00)
-  const N1_2RE = { lat: 51.5385, lng: -0.0955 }; // Essex Road, in Islington Zone B
+  // Real-postcode locations reported in user testing. The hand-drawn zone
+  // polygons are gone: spatial lookup uses imported real boundaries only
+  // (per-zone CPZs when the ETL has fetched them, else borough fallbacks).
+  const N6_5TS = { lat: 51.5723, lng: -0.1455 }; // Highgate (Camden)
+  const N1_2RE = { lat: 51.5385, lng: -0.0955 }; // Essex Road (Islington)
 
-  it("zoneAt finds the containing zone, or nothing outside every polygon", () => {
-    expect(zoneAt(N6_5TS, ZONES)?.id).toBe("caC");
-    expect(zoneAt(N1_2RE, ZONES)?.id).toBe("isA");
-    expect(zoneAt({ lat: 51.6, lng: 0.2 }, ZONES)).toBeUndefined();
-    // Wharf Road stays just outside the widened Islington boundary
-    expect(pointInPolygon({ lat: 51.5297, lng: -0.0948 }, ZONES[0].poly!)).toBe(false);
+  it("hand-drawn zones no longer answer location lookups", () => {
+    expect(zoneAt(N6_5TS, ZONES)).toBeUndefined();
+    expect(ZONES.every((z) => !z.poly && !z.polys)).toBe(true);
   });
 
-  it("N6 5TS on a Saturday: your own street is free and wins (zone only runs Mon–Fri 10–12)", () => {
-    const res = evaluate(N6_5TS, d(18, 10), d(18, 12), DEFAULT_DATASET, {
+  it("N6 5TS on a Sunday: your own street is free and wins", () => {
+    const res = evaluate(N6_5TS, d(19, 10), d(19, 12), DEFAULT_DATASET, {
       destinationStreets: true,
     });
     const top = res[0];
@@ -176,11 +175,27 @@ describe("borough fallback zones (real boundary data)", () => {
   it("resolves points to real borough boundaries when no specific zone matches", () => {
     expect(zoneAt(HIGHBURY, ALL_ZONES)?.id).toBe("boro-islington");
     expect(zoneAt({ lat: 51.5504, lng: -0.1425 }, ALL_ZONES)?.id).toBe("boro-camden"); // Kentish Town
+    expect(zoneAt(ANGEL, ALL_ZONES)?.id).toBe("boro-islington"); // Angel too, until per-zone data is imported
     expect(zoneAt({ lat: 51.42, lng: -0.21 }, ALL_ZONES)).toBeUndefined(); // Wimbledon
   });
 
-  it("specific zones still win over the borough fallback", () => {
-    expect(zoneAt(ANGEL, ALL_ZONES)?.id).toBe("isA");
+  it("imported per-zone CPZs outrank the borough fallback", () => {
+    const fakePrecise = {
+      ...BOROUGH_ZONES[0],
+      id: "cam-test",
+      name: "Camden TEST",
+      kind: "cpz" as const,
+      polys: [
+        [
+          [51.54, -0.11],
+          [51.56, -0.11],
+          [51.56, -0.09],
+          [51.54, -0.09],
+          [51.54, -0.11],
+        ] as [number, number][],
+      ],
+    };
+    expect(zoneAt(HIGHBURY, [fakePrecise, ...BOROUGH_ZONES])?.id).toBe("cam-test");
   });
 
   it("Sat 10:30–14:30 in Islington outside the curated zones now charges for the controlled hours", () => {
