@@ -28,10 +28,10 @@ const ICONS: Record<Spot["type"], [string, string]> = {
 };
 
 const BADGE_TAGS: Record<Badge, { cls: string; label: string }> = {
-  best: { cls: "best", label: "🏆 BEST OVERALL" },
-  free: { cls: "freet", label: "🌱 BEST FREE" },
-  close: { cls: "close", label: "📍 CLOSEST" },
-  cheap: { cls: "cheap", label: "💷 CHEAPEST PAID" },
+  best: { cls: "best", label: "Best overall" },
+  free: { cls: "freet", label: "Best free" },
+  close: { cls: "close", label: "Closest" },
+  cheap: { cls: "cheap", label: "Cheapest paid" },
 };
 
 function Card({
@@ -70,7 +70,7 @@ function Card({
           {r.walkMin} min walk · {Math.round(r.km * 100) / 100} km
         </div>
         <div className={"c-note" + (r.valid ? "" : " bad")}>{r.note}</div>
-        {r.warn && <div className="c-note warn">⚠️ {r.warn}</div>}
+        {r.warn && <div className="c-note warn">{r.warn}</div>}
         <a
           className="gm-link"
           href={gmapsLink(r.spot.lat, r.spot.lng)}
@@ -82,7 +82,9 @@ function Card({
         </a>
         <div className="tags">
           {r.badges.map((b) => (
-            <span key={b} className={"tag " + BADGE_TAGS[b].cls}>{BADGE_TAGS[b].label}</span>
+            <span key={b} className={"tag " + BADGE_TAGS[b].cls}>
+            {BADGE_TAGS[b].label}
+          </span>
           ))}
           <span className="tag type">{r.typeLabel.toUpperCase()}</span>
         </div>

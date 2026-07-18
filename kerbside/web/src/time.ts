@@ -1,67 +1,45 @@
-export type PresetKey = "now2" | "now4" | "evening" | "overnight" | "satmorn" | "sunday";
-
-export const PRESETS: { key: PresetKey; label: string }[] = [
-  { key: "now2", label: "Now · 2 hrs" },
-  { key: "now4", label: "Now · 4 hrs" },
-  { key: "evening", label: "This evening" },
-  { key: "overnight", label: "Overnight" },
-  { key: "satmorn", label: "Sat morning" },
-  { key: "sunday", label: "Sunday" },
-];
-
-export function toLocalISO(d: Date): string {
+export function toISODate(d: Date): string {
   const p = (n: number) => String(n).padStart(2, "0");
-  return (
-    d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) +
-    "T" + p(d.getHours()) + ":" + p(d.getMinutes())
-  );
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
 }
 
-function roundQ(input: Date): Date {
+export function toHM(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return p(d.getHours()) + ":" + p(d.getMinutes());
+}
+
+/** Round up to the next quarter hour. */
+export function roundQuarter(input: Date): Date {
   const d = new Date(input);
   d.setSeconds(0, 0);
   d.setMinutes(Math.ceil(d.getMinutes() / 15) * 15);
   return d;
 }
 
-export function presetWindow(key: PresetKey, now = new Date()): { start: Date; end: Date } {
-  const nextDow = (dow: number, h: number) => {
-    const d = new Date(now);
-    d.setDate(d.getDate() + (((dow - d.getDay() + 7) % 7) || 7));
-    d.setHours(h, 0, 0, 0);
-    return d;
-  };
-  let s: Date;
-  let e: Date;
-  if (key === "now2") {
-    s = roundQ(now);
-    e = new Date(s.getTime() + 2 * 36e5);
-  } else if (key === "now4") {
-    s = roundQ(now);
-    e = new Date(s.getTime() + 4 * 36e5);
-  } else if (key === "evening") {
-    s = new Date(now);
-    s.setHours(19, 0, 0, 0);
-    if (s < now) s.setDate(s.getDate() + 1);
-    e = new Date(s);
-    e.setHours(23, 0);
-  } else if (key === "overnight") {
-    s = new Date(now);
-    s.setHours(20, 0, 0, 0);
-    if (s < now) s.setDate(s.getDate() + 1);
-    e = new Date(s);
-    e.setDate(e.getDate() + 1);
-    e.setHours(8, 0);
-  } else if (key === "satmorn") {
-    s = nextDow(6, 9);
-    e = new Date(s);
-    e.setHours(12, 0);
+export const DEFAULT_STAY_HOURS = 2;
+
+export interface StayWindow {
+  start: Date;
+  end: Date;
+}
+
+/**
+ * Build the stay window from the form fields. An empty "to" means a default
+ * 2-hour stay; a "to" at or before "from" rolls over to the next day (overnight).
+ */
+export function buildWindow(date: string, from: string, to: string): StayWindow | null {
+  if (!date || !from) return null;
+  const start = new Date(date + "T" + from);
+  if (isNaN(start.getTime())) return null;
+  let end: Date;
+  if (to) {
+    end = new Date(date + "T" + to);
+    if (isNaN(end.getTime())) return null;
+    if (end <= start) end.setDate(end.getDate() + 1);
   } else {
-    s = nextDow(0, 10);
-    e = new Date(s);
-    e.setHours(17, 0);
+    end = new Date(start.getTime() + DEFAULT_STAY_HOURS * 36e5);
   }
-  return { start: s, end: e };
+  return { start, end };
 }
 
 export function fmtDT(d: Date): string {
