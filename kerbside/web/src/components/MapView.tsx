@@ -10,8 +10,34 @@ import {
 } from "@kerbside/engine";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { gmapsLink } from "../time";
+
+type BaseLayer = "map" | "sat";
+
+/** Clean, Google-Maps-like street tiles (CARTO Voyager). */
+function streetTiles(): L.TileLayer {
+  return L.tileLayer(
+    "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+    {
+      maxZoom: 20,
+      subdomains: "abcd",
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    },
+  );
+}
+
+/** Satellite imagery (Esri World Imagery). */
+function satTiles(): L.TileLayer {
+  return L.tileLayer(
+    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    {
+      maxZoom: 19,
+      attribution: "Imagery &copy; Esri &amp; contributors",
+    },
+  );
+}
 
 export interface Selection {
   idx: number;
@@ -33,7 +59,15 @@ const ICONS: Record<Spot["type"], [string, string]> = {
   res: ["R", "res"],
   yellow: ["F", "free"],
   freeSt: ["F", "free"],
+  noStop: ["⊘", "nostop"],
+  noLoad: ["L", "noload"],
 };
+
+/** Destination marker: a car, so it reads as "leave the car here". */
+const CAR_SVG =
+  '<svg viewBox="0 0 24 24" width="18" height="18" fill="#fff" aria-hidden="true">' +
+  '<path d="M5 11l1.5-4.5A2 2 0 0 1 8.4 5h7.2a2 2 0 0 1 1.9 1.5L19 11h.5a1.5 1.5 0 0 1 1.5 1.5V17a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H6v1a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-4.5A1.5 1.5 0 0 1 4.5 11H5zm2.2-.5h9.6l-1-3a.5.5 0 0 0-.48-.35H8.68a.5.5 0 0 0-.48.35l-1 3zM7 15a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm10 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"/>' +
+  "</svg>";
 
 function pinIcon(spot: Spot, dim: boolean, win: boolean): L.DivIcon {
   const [ch, cls] = ICONS[spot.type];
@@ -53,6 +87,9 @@ export function MapView({ dest, window: win, results, selection, onSelect, toast
   const destMarkerRef = useRef<L.Marker | null>(null);
   const walkLineRef = useRef<L.Polyline | null>(null);
   const markersRef = useRef<L.Marker[]>([]);
+  const tileRef = useRef<L.TileLayer | null>(null);
+  const fittedRef = useRef<EvaluatedOption[] | null>(null);
+  const [base, setBase] = useState<BaseLayer>("map");
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
 
@@ -60,18 +97,25 @@ export function MapView({ dest, window: win, results, selection, onSelect, toast
     if (!divRef.current || mapRef.current) return;
     const map = L.map(divRef.current, { zoomControl: false }).setView([51.5155, -0.11], 12);
     L.control.zoom({ position: "bottomright" }).addTo(map);
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      attribution: "&copy; OpenStreetMap contributors",
-    }).addTo(map);
+    tileRef.current = streetTiles().addTo(map);
     zoneLayerRef.current = L.layerGroup().addTo(map);
     spotLayerRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
     return () => {
       map.remove();
       mapRef.current = null;
+      tileRef.current = null;
     };
   }, []);
+
+  // base layer switch (Map / Satellite)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    tileRef.current?.remove();
+    tileRef.current = (base === "sat" ? satTiles() : streetTiles()).addTo(map);
+    tileRef.current.bringToBack();
+  }, [base]);
 
   // zone polygons, amber when active during the searched window
   useEffect(() => {
@@ -116,9 +160,9 @@ export function MapView({ dest, window: win, results, selection, onSelect, toast
     destMarkerRef.current = L.marker([dest.lat, dest.lng], {
       icon: L.divIcon({
         className: "",
-        html: '<div class="dest-pin"></div>',
-        iconSize: [20, 20],
-        iconAnchor: [10, 10],
+        html: '<div class="dest-pin">' + CAR_SVG + "</div>",
+        iconSize: [34, 34],
+        iconAnchor: [17, 17],
       }),
       zIndexOffset: 1000,
     }).addTo(map);
@@ -148,8 +192,23 @@ export function MapView({ dest, window: win, results, selection, onSelect, toast
       m.addTo(layer);
       markersRef.current.push(m);
     });
+    // recentre on the searched destination and its options (also after "Edit"),
+    // but only when a new search produced these results — not on a mere dest change
+    const map = mapRef.current;
+    if (map && results !== fittedRef.current) {
+      fittedRef.current = results;
+      const pts: [number, number][] = results
+        .filter((r) => r.valid)
+        .map((r) => [r.spot.lat, r.spot.lng]);
+      if (dest) pts.push([dest.lat, dest.lng]);
+      if (pts.length > 1) {
+        map.fitBounds(L.latLngBounds(pts), { padding: [48, 48], maxZoom: 16, animate: true });
+      } else if (dest) {
+        map.setView([dest.lat, dest.lng], 15, { animate: true });
+      }
+    }
     setTimeout(() => mapRef.current?.invalidateSize(), 300);
-  }, [results]);
+  }, [results, dest]);
 
   // selection: highlight pin, draw the dashed walk line, optionally pan
   useEffect(() => {
@@ -181,10 +240,25 @@ export function MapView({ dest, window: win, results, selection, onSelect, toast
   return (
     <div className="map-shell">
       <div className="map" ref={divRef} />
+      <div className="layer-toggle" role="group" aria-label="Map style">
+        <button
+          className={base === "map" ? "on" : ""}
+          onClick={() => setBase("map")}
+        >
+          Map
+        </button>
+        <button
+          className={base === "sat" ? "on" : ""}
+          onClick={() => setBase("sat")}
+        >
+          Satellite
+        </button>
+      </div>
       <div className="legend">
         <span><i className="dotk" style={{ background: "var(--p-blue)" }} />Car park</span>
         <span><i className="dotk" style={{ background: "var(--zone-amber)" }} />Paid bay</span>
         <span><i className="dotk" style={{ background: "var(--go-green)" }} />Free option</span>
+        <span><i className="dotk" style={{ background: "var(--coral)" }} />No stopping / loading</span>
         <span><i className="dotk" style={{ background: "#FFCF33", opacity: 0.5, borderRadius: 3 }} />CPZ (active)</span>
       </div>
       <div className={"toast" + (toast ? " show" : "")}>{toast}</div>

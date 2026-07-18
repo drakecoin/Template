@@ -14,6 +14,11 @@ export const SEARCH_RADIUS_KM = 1.5;
 /** Walk penalty added to the score: pence per minute of walking. */
 export const WALK_PENALTY_PENCE_PER_MIN = 35;
 export const MAX_WINDOW_HOURS = 48;
+/**
+ * Fallback "last updated" date for records without their own `checkedAt`
+ * (YYYY-MM-DD). Matches the ETL snapshot date of the imported borough data.
+ */
+export const DATA_UPDATED = "2026-07-18";
 
 export function haversineKm(a: LatLng, b: LatLng): number {
   const R = 6371;
@@ -32,13 +37,13 @@ function hm(str: string): number {
   return h * 60 + m;
 }
 
-/** Minutes of [start, end) overlapping a zone's controlled hours (Europe/London local time). */
-export function controlledOverlapMin(zone: Zone, start: Date, end: Date): number {
+/** Minutes of [start, end) overlapping a set of scheduled hours (Europe/London local time). */
+export function schedOverlapMin(sched: SchedEntry[], start: Date, end: Date): number {
   let total = 0;
   const day = new Date(start);
   day.setHours(0, 0, 0, 0);
   while (day < end) {
-    for (const s of zone.sched) {
+    for (const s of sched) {
       if (!s.days.includes(day.getDay())) continue;
       const cs = new Date(day);
       cs.setMinutes(hm(s.from));
@@ -50,6 +55,11 @@ export function controlledOverlapMin(zone: Zone, start: Date, end: Date): number
     day.setDate(day.getDate() + 1);
   }
   return Math.round(total);
+}
+
+/** Minutes of [start, end) overlapping a zone's controlled hours (Europe/London local time). */
+export function controlledOverlapMin(zone: Zone, start: Date, end: Date): number {
+  return schedOverlapMin(zone.sched, start, end);
 }
 
 export function zoneActiveDuring(zone: Zone, start: Date, end: Date): boolean {
@@ -162,7 +172,7 @@ export function walkMinutes(km: number): number {
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-export function zoneHoursText(z: Zone): string {
+export function zoneHoursText(z: Pick<Zone, "sched">): string {
   return z.sched
     .map((s: SchedEntry) => {
       const ds =
@@ -266,6 +276,22 @@ export function evaluate(
       r.costPence = 0;
       r.note = "Uncontrolled street — free any time";
       r.warn = "Popular: arrive early";
+    } else if (spot.type === "noStop") {
+      r.typeLabel = "No stopping";
+      r.valid = false;
+      r.note = "Red route / clearway — no stopping at any time";
+    } else if (spot.type === "noLoad") {
+      // Advisory, never a ranked bay: a loading-ban stretch isn't parking. It's
+      // a hard "no" while the ban is posted, and off-ban it still carries the
+      // caveat that the kerb line beneath governs whether you can park at all.
+      r.typeLabel = "No loading";
+      r.valid = false;
+      const banText = spot.sched ? zoneHoursText({ sched: spot.sched }) : "at all times";
+      const ov = spot.sched ? schedOverlapMin(spot.sched, start, end) : 1;
+      r.note =
+        ov > 0
+          ? "Loading ban active during your times (" + banText + ") — no waiting or parking"
+          : "Loading ban (" + banText + ") not active for your times — but this isn't a bay; check the kerb line beneath";
     }
 
     if (spot.virtual) r.note += " · " + spot.note;

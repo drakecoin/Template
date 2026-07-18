@@ -241,6 +241,18 @@ export const SPOTS: Spot[] = [
   { n: "Canada Square CP", type: "cp", lat: 51.5052, lng: -0.0208, ratePence: 500, dayMaxPence: 2500, evePence: 700, note: "24/7, weekend flat rates" },
   { n: "Westferry Circus CP", type: "cp", lat: 51.506, lng: -0.0295, ratePence: 450, dayMaxPence: 2200, evePence: 600, note: "24/7" },
   { n: "Coldharbour (uncontrolled)", type: "freeSt", lat: 51.501, lng: -0.0125, note: "Free streets near Blackwall" },
+  // ---- No-stopping (red route / clearway) — never parkable
+  { n: "Camden Road (red route)", type: "noStop", lat: 51.5396, lng: -0.1387, note: "A503 red route — no stopping at any time" },
+  { n: "Camden High Street (red route)", type: "noStop", lat: 51.5375, lng: -0.1424, note: "TfL red route through Camden Town" },
+  { n: "Euston Road (red route)", type: "noStop", lat: 51.5286, lng: -0.1255, note: "A501 red route by King's Cross" },
+  { n: "Upper Street (red route)", type: "noStop", lat: 51.5378, lng: -0.1029, note: "A1 red route, Islington" },
+  { n: "Shaftesbury Avenue (red route)", type: "noStop", lat: 51.5124, lng: -0.13, note: "West End red route" },
+  { n: "Marylebone Road (red route)", type: "noStop", lat: 51.5222, lng: -0.1552, note: "A501 red route" },
+  // ---- No-loading bans (time-aware) — blocked only while the ban is posted
+  { n: "Parkway loading ban", type: "noLoad", lat: 51.5372, lng: -0.1454, sched: [{ days: [1, 2, 3, 4, 5, 6], from: "07:00", to: "10:00" }], note: "Peak loading ban outside the shops" },
+  { n: "Bayham Street loading ban", type: "noLoad", lat: 51.5361, lng: -0.1409, sched: [{ days: [1, 2, 3, 4, 5], from: "08:00", to: "09:30" }, { days: [1, 2, 3, 4, 5], from: "16:30", to: "18:30" }], note: "Twin-blip loading ban, peaks only" },
+  { n: "Chapel Market loading ban", type: "noLoad", lat: 51.5327, lng: -0.1073, sched: [{ days: [1, 2, 3, 4, 5, 6], from: "08:30", to: "18:30" }], note: "Market street loading restriction" },
+  { n: "Berwick Street loading ban", type: "noLoad", lat: 51.5136, lng: -0.1361, sched: [{ days: [1, 2, 3, 4, 5, 6], from: "07:00", to: "11:00" }], note: "Soho market loading ban, mornings" },
 ];
 
 // Postcode districts (outward code -> approx centre) for offline lookup

@@ -24,6 +24,10 @@ const BOROUGH_DATASET = { zones: BOROUGH_ZONES, spots: SPOTS };
 
 const d = (day: number, h: number, m = 0) => new Date(2026, 6, day, h, m);
 
+// On-street types that become free parking once controlled hours end. Excludes
+// car parks (always charge) and no-stopping / no-loading areas (never a bay).
+const PARKABLE_STREET = new Set(["paid", "res", "yellow", "freeSt"]);
+
 const byName = (res: EvaluatedOption[], name: string): EvaluatedOption => {
   const r = res.find((x) => x.spot.n === name);
   if (!r) throw new Error(name + " not in results");
@@ -51,7 +55,7 @@ describe("SPEC §6 scenarios — Angel", () => {
   it("2. Tue 20:00–23:00: zone ended 18:30 so everything on-street is free; nearest bay sweeps the badges", () => {
     const res = evaluate(ANGEL, d(14, 20), d(14, 23), CURATED);
 
-    for (const r of res.filter((x) => x.spot.type !== "cp")) {
+    for (const r of res.filter((x) => PARKABLE_STREET.has(x.spot.type))) {
       expect(r.valid, r.spot.n).toBe(true);
       expect(r.costPence, r.spot.n).toBe(0);
     }
@@ -70,7 +74,7 @@ describe("SPEC §6 scenarios — Angel", () => {
 
   it("4. Fri 20:00 – Sat 08:00 overnight: free — Saturday's 08:30 start is not breached", () => {
     const res = evaluate(ANGEL, d(17, 20), d(18, 8), CURATED);
-    for (const r of res.filter((x) => x.spot.type !== "cp")) {
+    for (const r of res.filter((x) => PARKABLE_STREET.has(x.spot.type))) {
       expect(r.valid, r.spot.n).toBe(true);
       expect(r.costPence, r.spot.n).toBe(0);
     }
@@ -112,10 +116,44 @@ describe("SPEC §6 scenarios — Camden Town", () => {
 
   it("7. Sat 23:30 – Sun 01:00: control ends 23:00, Sunday starts 09:30 — all street options free", () => {
     const res = evaluate(CAMDEN_TOWN, d(18, 23, 30), d(19, 1), CURATED);
-    for (const r of res.filter((x) => x.spot.type !== "cp")) {
+    for (const r of res.filter((x) => PARKABLE_STREET.has(x.spot.type))) {
       expect(r.valid, r.spot.n).toBe(true);
       expect(r.costPence, r.spot.n).toBe(0);
     }
+  });
+});
+
+describe("no-stopping and no-loading areas", () => {
+  it("red routes are never parkable, whatever the time", () => {
+    const day = evaluate(CAMDEN_TOWN, d(14, 11), d(14, 13), CURATED);
+    const night = evaluate(CAMDEN_TOWN, d(18, 23, 30), d(19, 1), CURATED);
+    for (const res of [day, night]) {
+      const red = byName(res, "Camden High Street (red route)");
+      expect(red.valid).toBe(false);
+      expect(red.typeLabel).toBe("No stopping");
+      expect(red.badges).toHaveLength(0);
+      expect(red.note).toContain("no stopping");
+    }
+  });
+
+  it("a loading ban's note is time-aware but it is never a ranked bay", () => {
+    // Parkway ban runs Mon–Sat 07:00–10:00.
+    const during = byName(evaluate(CAMDEN_TOWN, d(14, 8), d(14, 9), CURATED), "Parkway loading ban");
+    expect(during.valid).toBe(false);
+    expect(during.note).toContain("active during your times");
+    expect(during.note).toContain("07:00–10:00");
+
+    const after = byName(evaluate(CAMDEN_TOWN, d(14, 11), d(14, 13), CURATED), "Parkway loading ban");
+    expect(after.valid).toBe(false); // advisory only — never recommended as parking
+    expect(after.note).toContain("not active for your times");
+    expect(after.badges).toHaveLength(0);
+  });
+
+  it("restriction areas never sort above valid options", () => {
+    const res = evaluate(CAMDEN_TOWN, d(14, 11), d(14, 13), CURATED);
+    const firstInvalid = res.findIndex((r) => !r.valid);
+    const lastValid = res.map((r) => r.valid).lastIndexOf(true);
+    expect(firstInvalid).toBeGreaterThan(lastValid);
   });
 });
 

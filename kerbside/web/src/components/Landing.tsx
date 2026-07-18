@@ -1,11 +1,12 @@
 import { PLACES, type Place } from "@kerbside/engine";
 import { useEffect, useRef, useState } from "react";
-import { parsePostcode } from "../geocode";
+import { parsePostcode, searchAddress, type AddressHit } from "../geocode";
 
 interface Props {
   query: string;
   onQueryChange: (q: string) => void;
   onPickPlace: (p: Place) => void;
+  onPickAddress: (hit: AddressHit) => void;
   onPostcode: (q: string, run: boolean) => Promise<boolean>;
   dateVal: string;
   fromTime: string;
@@ -25,9 +26,49 @@ interface Props {
   onInstall: (() => void) | null;
 }
 
+/** A date/time field that opens its native picker wherever you tap the box. */
+function WhenField({
+  label,
+  type,
+  value,
+  onChange,
+}: {
+  label: string;
+  type: "date" | "time";
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  const open = () => {
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    try {
+      el.showPicker?.();
+    } catch {
+      /* needs a user gesture or unsupported — focus alone still works */
+    }
+  };
+  return (
+    <label className="when-field" onClick={open}>
+      <span>{label}</span>
+      <input
+        ref={ref}
+        type={type}
+        value={value}
+        onClick={open}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </label>
+  );
+}
+
 export function Landing(props: Props) {
   const [expanded, setExpanded] = useState(props.startExpanded);
+  const [addrHits, setAddrHits] = useState<AddressHit[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const seqRef = useRef(0);
 
   useEffect(() => {
     if (expanded) inputRef.current?.focus();
@@ -35,9 +76,28 @@ export function Landing(props: Props) {
 
   const q = props.query.trim();
   const list = q
-    ? PLACES.filter((p) => (p.n + " " + p.a).toLowerCase().includes(q.toLowerCase())).slice(0, 5)
+    ? PLACES.filter((p) => (p.n + " " + p.a).toLowerCase().includes(q.toLowerCase())).slice(0, 4)
     : [];
   const pc = parsePostcode(q);
+  const isPc = pc !== null;
+
+  // live address lookup (debounced) — skipped for postcodes
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    const seq = ++seqRef.current;
+    if (props.destChosen || q.length < 3 || isPc) {
+      setAddrHits([]);
+      return;
+    }
+    debounceRef.current = setTimeout(() => {
+      void searchAddress(q).then((hits) => {
+        if (seqRef.current === seq) setAddrHits(hits);
+      });
+    }, 300);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [q, isPc, props.destChosen]);
 
   const onKeyDown = async (e: React.KeyboardEvent) => {
     if (e.key !== "Enter") return;
@@ -46,10 +106,18 @@ export function Landing(props: Props) {
     if (p) {
       props.onPickPlace(p);
       props.onFind();
+      return;
+    }
+    const hits = addrHits.length ? addrHits : await searchAddress(q);
+    if (hits.length) {
+      props.onPickAddress(hits[0]);
+      props.onFind();
     } else {
       props.onEnterNoMatch();
     }
   };
+
+  const showSugs = !props.destChosen && (list.length > 0 || pc !== null || addrHits.length > 0);
 
   return (
     <div className="hero">
@@ -69,14 +137,14 @@ export function Landing(props: Props) {
               ref={inputRef}
               className="hero-input"
               type="text"
-              placeholder="Address, postcode or area"
+              placeholder="Address, postcode or place"
               autoComplete="off"
               aria-label="Destination"
               value={props.query}
               onChange={(e) => props.onQueryChange(e.target.value)}
               onKeyDown={onKeyDown}
             />
-            {!props.destChosen && (list.length > 0 || pc) && (
+            {showSugs && (
               <div className="hero-sugs">
                 {pc && (
                   <button className="sug" onClick={() => void props.onPostcode(q, false)}>
@@ -89,36 +157,18 @@ export function Landing(props: Props) {
                     <span className="area">{p.a}</span>
                   </button>
                 ))}
+                {addrHits.map((h) => (
+                  <button className="sug" key={h.name} onClick={() => props.onPickAddress(h)}>
+                    {h.name}
+                    <span className="area">address</span>
+                  </button>
+                ))}
               </div>
             )}
             <div className="when-row">
-              <label className="when-field">
-                <span>Date</span>
-                <input
-                  id="heroDate"
-                  type="date"
-                  value={props.dateVal}
-                  onChange={(e) => props.onDateChange(e.target.value)}
-                />
-              </label>
-              <label className="when-field">
-                <span>From</span>
-                <input
-                  id="heroFrom"
-                  type="time"
-                  value={props.fromTime}
-                  onChange={(e) => props.onFromChange(e.target.value)}
-                />
-              </label>
-              <label className="when-field">
-                <span>To</span>
-                <input
-                  id="heroTo"
-                  type="time"
-                  value={props.toTime}
-                  onChange={(e) => props.onToChange(e.target.value)}
-                />
-              </label>
+              <WhenField label="Date" type="date" value={props.dateVal} onChange={props.onDateChange} />
+              <WhenField label="From" type="time" value={props.fromTime} onChange={props.onFromChange} />
+              <WhenField label="To" type="time" value={props.toTime} onChange={props.onToChange} />
             </div>
             <p className="when-hint">Leave “To” empty for a 2-hour stay. Ends earlier than it starts? That’s overnight.</p>
           </div>

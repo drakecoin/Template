@@ -15,7 +15,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Landing } from "./components/Landing";
 import { MapView, type Selection } from "./components/MapView";
 import { ResultsSheet } from "./components/ResultsSheet";
-import { geocodePostcode, parsePostcode } from "./geocode";
+import { geocodePostcode, parsePostcode, searchAddress, type AddressHit } from "./geocode";
 import { buildWindow, fmtDT, roundQuarter, toHM, toISODate, type StayWindow } from "./time";
 
 const LONDON_BBOX = { latMin: 51.28, latMax: 51.7, lngMin: -0.51, lngMax: 0.33 };
@@ -126,6 +126,14 @@ export function App() {
     [setDestination],
   );
 
+  const onPickAddress = useCallback(
+    (h: AddressHit) => {
+      setQuery(h.name);
+      setDestination(h.lat, h.lng, h.name);
+    },
+    [setDestination],
+  );
+
   const onPostcode = useCallback(
     async (q: string, run: boolean): Promise<boolean> => {
       const pc = parsePostcode(q);
@@ -148,31 +156,55 @@ export function App() {
 
   const parkHereNow = useCallback(() => {
     if (!navigator.geolocation) {
-      showToast("Location isn't available here — type an address instead");
+      showToast("Location isn't available in this browser — type an address instead");
       return;
     }
+    if (!window.isSecureContext) {
+      showToast("Location needs HTTPS — open the app over https:// or type an address");
+      return;
+    }
+    const onFix = (pos: GeolocationPosition) => {
+      const { latitude: lat, longitude: lng } = pos.coords;
+      // keep the demo inside Greater London
+      if (
+        lat < LONDON_BBOX.latMin || lat > LONDON_BBOX.latMax ||
+        lng < LONDON_BBOX.lngMin || lng > LONDON_BBOX.lngMax
+      ) {
+        showToast("You're outside the demo area — showing Angel");
+        setQuery(ANGEL.n);
+        setDestination(ANGEL.lat, ANGEL.lng, ANGEL.n);
+        runSearch({ lat: ANGEL.lat, lng: ANGEL.lng });
+        return;
+      }
+      setQuery("My location");
+      setDestination(lat, lng, "your location");
+      runSearch({ lat, lng });
+    };
+    const onFail = (err: GeolocationPositionError) => {
+      if (err.code === err.PERMISSION_DENIED) {
+        showToast("Location is blocked — allow it in your browser's site settings");
+      } else if (err.code === err.POSITION_UNAVAILABLE) {
+        showToast("Your device couldn't work out where it is — type an address instead");
+      } else {
+        showToast("Location timed out — type an address instead");
+      }
+    };
     showToast("Finding you…");
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const { latitude: lat, longitude: lng } = pos.coords;
-        // keep the demo inside Greater London
-        if (
-          lat < LONDON_BBOX.latMin || lat > LONDON_BBOX.latMax ||
-          lng < LONDON_BBOX.lngMin || lng > LONDON_BBOX.lngMax
-        ) {
-          showToast("You're outside the demo area — showing Angel");
-          setQuery(ANGEL.n);
-          setDestination(ANGEL.lat, ANGEL.lng, ANGEL.n);
-          runSearch({ lat: ANGEL.lat, lng: ANGEL.lng });
-          return;
-        }
-        setQuery("My location");
-        setDestination(lat, lng, "your location");
-        runSearch({ lat, lng });
-      },
-      () => showToast("Couldn't get a fix — type an address instead"),
-      { timeout: 8000 },
-    );
+    // First try: quick, high accuracy, accept a fix from the last 30 s.
+    navigator.geolocation.getCurrentPosition(onFix, (err) => {
+      if (err.code === err.PERMISSION_DENIED) {
+        onFail(err);
+        return;
+      }
+      // Second try: low accuracy (wifi/IP), longer timeout, accept a
+      // cached fix up to 10 min old — much more reliable on laptops.
+      showToast("Still looking — trying a coarser fix…");
+      navigator.geolocation.getCurrentPosition(onFix, onFail, {
+        enableHighAccuracy: false,
+        timeout: 20000,
+        maximumAge: 600000,
+      });
+    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
   }, [setDestination, runSearch, showToast]);
 
   const onCta = useCallback(() => {
@@ -186,14 +218,21 @@ export function App() {
         if (p) {
           onPickPlace(p);
           runSearch({ lat: p.lat, lng: p.lng });
+          return;
+        }
+        showToast("Looking up address…");
+        const hits = await searchAddress(q);
+        if (hits.length) {
+          onPickAddress(hits[0]);
+          runSearch({ lat: hits[0].lat, lng: hits[0].lng });
         } else {
-          showToast("Try a postcode (e.g. N1 8DU) or an area name");
+          showToast("No match — try a street address, postcode or area name");
         }
       })();
     } else {
       parkHereNow();
     }
-  }, [dest, query, runSearch, onPostcode, onPickPlace, parkHereNow, showToast]);
+  }, [dest, query, runSearch, onPostcode, onPickPlace, onPickAddress, parkHereNow, showToast]);
 
   const onSelect = useCallback((idx: number, pan: boolean) => {
     setSelection({ idx, pan });
@@ -218,8 +257,11 @@ export function App() {
           window={window_}
           destName={destName}
           destZone={destZone}
+          dest={dest}
           selectedIdx={selection?.idx ?? null}
+          autoScroll={selection ? !selection.pan : false}
           onSelectCard={(i) => onSelect(i, true)}
+          onToast={showToast}
         />
       )}
 
@@ -243,6 +285,7 @@ export function App() {
             setDest(null);
           }}
           onPickPlace={onPickPlace}
+          onPickAddress={onPickAddress}
           onPostcode={onPostcode}
           dateVal={dateVal}
           fromTime={fromTime}
@@ -253,7 +296,7 @@ export function App() {
           ctaLabel={ctaLabel}
           onCta={onCta}
           onFind={() => runSearch()}
-          onEnterNoMatch={() => showToast("Try a postcode (e.g. N1 8DU) or an area name")}
+          onEnterNoMatch={() => showToast("No match — try a street address, postcode or area name")}
           startExpanded={hasSearched}
           destChosen={dest !== null}
           onInstall={installEvt ? onInstall : null}

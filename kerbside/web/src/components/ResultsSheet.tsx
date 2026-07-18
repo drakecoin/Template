@@ -1,15 +1,18 @@
 import {
+  DATA_UPDATED,
   fmtCost,
   SEARCH_RADIUS_KM,
   WALK_MIN_PER_KM,
   zoneHoursText,
   type Badge,
   type EvaluatedOption,
+  type LatLng,
   type Spot,
   type Zone,
 } from "@kerbside/engine";
 import { useEffect, useRef, useState } from "react";
 import { fmtDT, gmapsLink } from "../time";
+import { UpdateDialog } from "./UpdateDialog";
 
 type SheetState = "normal" | "peek" | "tall";
 
@@ -18,8 +21,12 @@ interface Props {
   window: { start: Date; end: Date } | null;
   destName: string;
   destZone: Zone | null;
+  dest: LatLng | null;
   selectedIdx: number | null;
+  /** True when the selection came from the map, so its card should scroll into view. */
+  autoScroll: boolean;
   onSelectCard: (idx: number) => void;
+  onToast: (msg: string) => void;
 }
 
 const ICONS: Record<Spot["type"], [string, string]> = {
@@ -28,31 +35,52 @@ const ICONS: Record<Spot["type"], [string, string]> = {
   res: ["R", "res"],
   yellow: ["F", "free"],
   freeSt: ["F", "free"],
+  noStop: ["⊘", "nostop"],
+  noLoad: ["L", "noload"],
 };
 
+/** Format a YYYY-MM-DD date as e.g. "18 Jul 2026". */
+function fmtDate(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return d + " " + months[m - 1] + " " + y;
+}
+
 const BADGE_TAGS: Record<Badge, { cls: string; label: string }> = {
-  best: { cls: "best", label: "Best overall" },
-  free: { cls: "freet", label: "Best free" },
+  best: { cls: "best", label: "Recommended" },
+  free: { cls: "freet", label: "Closest free" },
   close: { cls: "close", label: "Closest" },
   cheap: { cls: "cheap", label: "Cheapest paid" },
 };
+
+/** Top-picks slots, in display order. */
+const TOP_SLOTS: { badge: Badge; label: string }[] = [
+  { badge: "best", label: "Recommended" },
+  { badge: "close", label: "Closest" },
+  { badge: "free", label: "Closest free" },
+  { badge: "cheap", label: "Cheapest paid" },
+];
 
 function Card({
   r,
   idx,
   selected,
+  canScroll,
   onSelect,
 }: {
   r: EvaluatedOption;
   idx: number;
   selected: boolean;
+  /** Whether this card may pull the list to itself when selected. */
+  canScroll: boolean;
   onSelect: (idx: number) => void;
 }) {
   const [ch, cls] = ICONS[r.spot.type];
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (selected) ref.current?.scrollIntoView({ block: "nearest" });
-  }, [selected]);
+    if (selected && canScroll) ref.current?.scrollIntoView({ block: "nearest" });
+  }, [selected, canScroll]);
   return (
     <div
       ref={ref}
@@ -101,13 +129,18 @@ export function ResultsSheet({
   window: win,
   destName,
   destZone,
+  dest,
   selectedIdx,
+  autoScroll,
   onSelectCard,
+  onToast,
 }: Props) {
   const [sheet, setSheet] = useState<SheetState>("normal");
   const [naOpen, setNaOpen] = useState(false);
+  const [updateOpen, setUpdateOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const touchY = useRef<number | null>(null);
+  const lastUpdated = destZone?.checkedAt ?? DATA_UPDATED;
 
   useEffect(() => {
     setNaOpen(false);
@@ -132,6 +165,9 @@ export function ResultsSheet({
 
   const valid = results?.filter((r) => r.valid) ?? [];
   const na = results?.filter((r) => !r.valid) ?? [];
+  const topPicks = TOP_SLOTS
+    .map((s) => ({ ...s, r: valid.find((r) => r.badges.includes(s.badge)) }))
+    .filter((s): s is typeof s & { r: EvaluatedOption } => s.r !== undefined);
 
   return (
     <div
@@ -162,7 +198,23 @@ export function ResultsSheet({
             {destZone.verified ? "" : " (indicative)"}
           </p>
         )}
+        {results && (
+          <div className="res-updated">
+            <span className="upd-date">Last updated: {fmtDate(lastUpdated)}</span>
+            <button className="upd-btn" onClick={() => setUpdateOpen(true)}>
+              Update me
+            </button>
+          </div>
+        )}
       </div>
+
+      <UpdateDialog
+        open={updateOpen}
+        onClose={() => setUpdateOpen(false)}
+        destZone={destZone}
+        dest={dest}
+        onSubmitted={onToast}
+      />
       <div className="res-scroll" ref={scrollRef}>
         {!results ? (
           <div className="empty">
@@ -178,12 +230,30 @@ export function ResultsSheet({
           </div>
         ) : (
           <>
+            {topPicks.length > 0 && (
+              <>
+                {topPicks.map(({ badge, label, r }) => (
+                  <div className="top-slot" key={badge}>
+                    <div className="slot-label">{label}</div>
+                    <Card
+                      r={r}
+                      idx={results.indexOf(r)}
+                      selected={selectedIdx === results.indexOf(r)}
+                      canScroll={false}
+                      onSelect={onSelectCard}
+                    />
+                  </div>
+                ))}
+                <div className="sec-label">All options</div>
+              </>
+            )}
             {valid.map((r) => (
               <Card
                 key={r.spot.n}
                 r={r}
                 idx={results.indexOf(r)}
                 selected={selectedIdx === results.indexOf(r)}
+                canScroll={autoScroll}
                 onSelect={onSelectCard}
               />
             ))}
@@ -199,6 +269,7 @@ export function ResultsSheet({
                       r={r}
                       idx={results.indexOf(r)}
                       selected={selectedIdx === results.indexOf(r)}
+                      canScroll={autoScroll}
                       onSelect={onSelectCard}
                     />
                   ))}

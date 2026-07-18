@@ -26,7 +26,16 @@ export interface Zone {
   polys?: [number, number][][];
 }
 
-export type SpotType = "cp" | "paid" | "res" | "yellow" | "freeSt";
+export type SpotType =
+  | "cp"
+  | "paid"
+  | "res"
+  | "yellow"
+  | "freeSt"
+  /** No stopping at any time (red route / clearway) — never parkable. */
+  | "noStop"
+  /** Loading ban — parking blocked only while the posted ban is active. */
+  | "noLoad";
 
 export interface Spot {
   n: string;
@@ -35,6 +44,8 @@ export interface Spot {
   lng: number;
   /** Zone id for on-street spots governed by a CPZ. */
   zone?: string;
+  /** Posted ban hours for a "noLoad" area; absent means banned at all times. */
+  sched?: SchedEntry[];
   /** Car-park hourly rate in pence. */
   ratePence?: number;
   /** Car-park 24h day-max cap in pence. */
