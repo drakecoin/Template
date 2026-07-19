@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildSpots, signToSpotType } from "../sources/mapillary.js";
+import type { ZoneRecord } from "../sources/boroughs.js";
+import { buildSpots, lat2tile, lon2tile, signToSpotType } from "../sources/mapillary.js";
 
 describe("mapillary sign mapping", () => {
   it("maps no-stopping and clearway signs to noStop", () => {
@@ -11,10 +12,33 @@ describe("mapillary sign mapping", () => {
     expect(signToSpotType("regulatory--no-loading--g1")?.type).toBe("noLoad");
   });
 
-  it("ignores non-regulatory and unrelated signs", () => {
+  it("maps parking / CPZ signs to a paid bay", () => {
+    expect(signToSpotType("information--parking--g1")?.type).toBe("paid");
+    expect(signToSpotType("information--parking--g5")?.type).toBe("paid");
+  });
+
+  it("never maps a no-parking sign to a parkable bay", () => {
+    expect(signToSpotType("regulatory--no-parking--g1")).toBeNull();
+    // the combined sign is a no-stopping restriction, not a bay
+    expect(signToSpotType("regulatory--no-parking-or-no-stopping--g1")?.type).toBe("noStop");
+  });
+
+  it("ignores unrelated signs", () => {
     expect(signToSpotType("regulatory--maximum-speed-limit-30--g1")).toBeNull();
-    expect(signToSpotType("information--parking--g1")).toBeNull();
     expect(signToSpotType("warning--curve-left--g1")).toBeNull();
+  });
+});
+
+describe("mapillary slippy-tile math", () => {
+  it("increases x with longitude and y as latitude falls (north = smaller y)", () => {
+    expect(lon2tile(-0.2, 14)).toBeLessThan(lon2tile(0.0, 14));
+    expect(lat2tile(51.56, 14)).toBeLessThan(lat2tile(51.46, 14));
+  });
+
+  it("places central London in the expected z14 tile", () => {
+    // Trafalgar Square-ish (lng -0.128, lat 51.508)
+    expect(lon2tile(-0.128, 14)).toBe(8186);
+    expect(lat2tile(51.508, 14)).toBe(5448);
   });
 });
 
@@ -51,6 +75,24 @@ describe("mapillary buildSpots (dedupe + newest-wins)", () => {
       { object_value: "warning--curve-left--g1", geometry: { coordinates: [-0.14, 51.53] }, last_seen_at: JUN_2025 },
       { object_value: "regulatory--no-stopping--g1", last_seen_at: JUN_2025 },
     ]);
+    expect(spots).toHaveLength(0);
+  });
+
+  // A box around central London (rings are [lat,lng]).
+  const ZONE = {
+    id: "z-test",
+    polys: [[[51.52, -0.16], [51.55, -0.16], [51.55, -0.12], [51.52, -0.12], [51.52, -0.16]]],
+  } as unknown as ZoneRecord;
+
+  it("joins a parking sign to its containing zone", () => {
+    const spots = buildSpots([feat("information--parking--g1", -0.14, 51.53, JUN_2025)], [ZONE]);
+    expect(spots).toHaveLength(1);
+    expect(spots[0].type).toBe("paid");
+    expect(spots[0].zone).toBe("z-test");
+  });
+
+  it("drops a parking sign that falls outside every zone", () => {
+    const spots = buildSpots([feat("information--parking--g1", -0.30, 51.60, JUN_2025)], [ZONE]);
     expect(spots).toHaveLength(0);
   });
 });

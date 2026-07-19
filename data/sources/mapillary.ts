@@ -1,6 +1,9 @@
+import { VectorTile } from "@mapbox/vector-tile";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { PbfReader } from "pbf";
+import type { ZoneRecord } from "./boroughs.js";
 
 /**
  * Detected parking/stopping street signs from Mapillary (crowd-sourced,
@@ -10,30 +13,51 @@ import { fileURLToPath } from "node:url";
  * let it supersede older ones.
  *
  * We do NOT scrape Google Street View — its terms forbid building a derived
- * dataset from the imagery. Mapillary's Graph API is licensed for exactly this.
+ * dataset from the imagery. Mapillary is CC-BY-SA and licensed for exactly this.
+ *
+ * Data comes from Mapillary's map-feature VECTOR TILES (the Graph API's bbox
+ * queries are too slow for bulk): one small protobuf per z14 tile off a CDN,
+ * decoded locally. Each traffic-sign feature carries its class ("value") and
+ * capture dates, so we keep the most recent detection per spot.
  *
  * Needs a token in MAPILLARY_TOKEN (a Mapillary "client token", format
  * `MLY|<app-id>|<secret>`). Run: MAPILLARY_TOKEN=… npm run etl
  * Without a token (and no snapshot) the source is skipped, like the others.
  */
-const API = "https://graph.mapillary.com/map_features";
+const TILE_URL = "https://tiles.mapillary.com/maps/vtp/mly_map_feature_traffic_sign/2";
+const ZOOM = 14; // Mapillary recommends z14 for map features
+const CONCURRENCY = 8;
 
-// Greater London bounding box, tiled so no single request is truncated.
-const LONDON = { w: -0.52, s: 51.28, e: 0.33, n: 51.70 };
-const TILE_DEG = 0.03; // ~3 km cells
-const REQUEST_PAUSE_MS = 120; // be gentle on the API
+// Greater London bounding box. Tunable via env for a quicker first run, e.g.
+// inner London only:  MAPILLARY_BBOX="-0.23,51.46,0.0,51.56" npm run etl
+const DEFAULT_BBOX = { w: -0.52, s: 51.28, e: 0.33, n: 51.70 };
+const TIMEOUT_MS = Number(process.env.MAPILLARY_TIMEOUT_MS) || 30000;
+const RETRIES = 3;
 /** Two detections within this many metres of the same class are the same sign. */
 const DEDUPE_METRES = 18;
+
+function bbox(): { w: number; s: number; e: number; n: number } {
+  const env = process.env.MAPILLARY_BBOX;
+  if (env) {
+    const [w, s, e, n] = env.split(",").map(Number);
+    if ([w, s, e, n].every(Number.isFinite)) return { w, s, e, n };
+    console.log("[mapillary] ignoring malformed MAPILLARY_BBOX; using default");
+  }
+  return DEFAULT_BBOX;
+}
 
 const here = dirname(fileURLToPath(import.meta.url));
 const RAW_SNAPSHOT = join(here, "..", "raw", "mapillary_signs.json");
 
-/** Engine-ready restriction spot derived from a detected sign. */
+/** Engine-ready spot derived from a detected sign. */
 export interface MapillarySpot {
   n: string;
-  type: "noStop" | "noLoad";
+  /** noStop/noLoad are restriction areas; paid is a CPZ/parking bay priced by its zone. */
+  type: "noStop" | "noLoad" | "paid";
   lat: number;
   lng: number;
+  /** Zone id for a parking sign, so the engine prices it by that zone's hours. */
+  zone?: string;
   /** Capture date of the most recent detection (YYYY-MM-DD). */
   date: string;
   note: string;
@@ -47,34 +71,47 @@ interface RawFeature {
 }
 
 /**
- * Map a Mapillary traffic-sign class onto one of our restriction spot types.
- * Only signs we can represent faithfully are kept — no-stopping/clearway and
- * no-loading. Parking-hour plates and P-permitted signs are future work
- * (the detector classifies the pictogram, not the text plate beneath it).
+ * Map a Mapillary traffic-sign class onto a spot type.
+ *  - no-loading            -> noLoad (advisory)
+ *  - no-stopping/clearway  -> noStop (never parkable)
+ *  - CPZ / parking place   -> paid   (a bay, priced by its containing zone)
+ *
+ * Order matters for safety: restrictions and "no-parking" are matched BEFORE the
+ * generic "parking" rule, so a no-parking sign is never turned into a parkable
+ * bay (that would be a £130-PCN error). "no-parking" itself is skipped — we only
+ * assert bays where the sign says parking is permitted.
  */
 export function signToSpotType(objectValue: string): { type: MapillarySpot["type"]; label: string } | null {
   const v = objectValue.toLowerCase();
-  if (!v.includes("regulatory")) return null;
   if (/no-loading/.test(v)) return { type: "noLoad", label: "No loading" };
   if (/no-stopping|clearway/.test(v)) return { type: "noStop", label: "No stopping" };
+  if (/no-parking/.test(v)) return null; // "no parking" — must not become a paid bay
+  if (/parking/.test(v)) return { type: "paid", label: "Parking" };
   return null;
 }
-
-/** The sign classes we ask Mapillary for (comma-separated in the query). */
-const OBJECT_VALUES = [
-  "regulatory--no-stopping--g1",
-  "regulatory--no-stopping--g2",
-  "regulatory--no-stopping--g15",
-  "regulatory--no-parking-or-no-stopping--g1",
-  "regulatory--no-loading--g1",
-  "regulatory--clearway--g1",
-];
 
 function toIsoDate(ts: number | string | undefined): string {
   if (ts == null) return "";
   const ms = typeof ts === "number" ? ts : Number(ts);
   const d = new Date(Number.isFinite(ms) ? ms : Date.parse(String(ts)));
   return Number.isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
+}
+
+/** Ray-casting point-in-polygon over a zone's [lat,lng] rings. */
+function pointInRings(lat: number, lng: number, rings: number[][][]): boolean {
+  for (const ring of rings) {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [lat1, lng1] = ring[i];
+      const [lat2, lng2] = ring[j];
+      const intersects =
+        (lng1 > lng) !== (lng2 > lng) &&
+        lat < ((lat2 - lat1) * (lng - lng1)) / (lng2 - lng1) + lat1;
+      if (intersects) inside = !inside;
+    }
+    if (inside) return true;
+  }
+  return false;
 }
 
 /** Rough metres between two lat/lng points (equirectangular; fine at this scale). */
@@ -87,46 +124,101 @@ function metresBetween(aLat: number, aLng: number, bLat: number, bLng: number): 
   return Math.hypot(dLat, x) * R;
 }
 
-async function fetchTile(token: string, w: number, s: number, e: number, n: number): Promise<RawFeature[]> {
-  const url =
-    API +
-    "?fields=object_value,geometry,first_seen_at,last_seen_at" +
-    "&object_values=" + OBJECT_VALUES.join(",") +
-    "&bbox=" + [w, s, e, n].join(",");
-  const r = await fetch(url, {
-    headers: { Authorization: "OAuth " + token },
-    signal: AbortSignal.timeout(30000),
-  });
-  if (!r.ok) throw new Error("HTTP " + r.status + " for bbox " + [w, s, e, n].join(","));
-  const j = (await r.json()) as { data?: RawFeature[] };
-  return j.data ?? [];
+/** Web-Mercator slippy-map tile indices for a lon/lat at a given zoom. */
+export function lon2tile(lon: number, z: number): number {
+  return Math.floor(((lon + 180) / 360) * 2 ** z);
+}
+export function lat2tile(lat: number, z: number): number {
+  const r = (lat * Math.PI) / 180;
+  return Math.floor(((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * 2 ** z);
 }
 
-async function fetchAll(token: string): Promise<RawFeature[]> {
+/** Decode one map-feature vector tile into the traffic-sign detections we want. */
+function decodeTile(buf: ArrayBuffer, x: number, y: number, z: number): RawFeature[] {
+  const tile = new VectorTile(new PbfReader(new Uint8Array(buf)));
+  const layer = tile.layers["traffic_sign"] ?? tile.layers[Object.keys(tile.layers)[0]];
+  if (!layer) return [];
   const out: RawFeature[] = [];
-  let tiles = 0;
-  for (let x = LONDON.w; x < LONDON.e; x += TILE_DEG) {
-    for (let y = LONDON.s; y < LONDON.n; y += TILE_DEG) {
-      const w = x;
-      const s = y;
-      const e = Math.min(x + TILE_DEG, LONDON.e);
-      const n = Math.min(y + TILE_DEG, LONDON.n);
-      try {
-        const feats = await fetchTile(token, w, s, e, n);
-        out.push(...feats);
-      } catch (err) {
-        console.log("[mapillary] tile failed: " + String(err));
-      }
-      tiles++;
-      await new Promise((res) => setTimeout(res, REQUEST_PAUSE_MS));
-    }
+  for (let i = 0; i < layer.length; i++) {
+    const feat = layer.feature(i);
+    const props = feat.properties as Record<string, string | number | boolean | undefined>;
+    const value = String(props.value ?? props.object_value ?? "");
+    if (!value || !signToSpotType(value)) continue; // keep only signs we map
+    const gj = feat.toGeoJSON(x, y, z);
+    if (gj.geometry.type !== "Point") continue;
+    const [lng, lat] = gj.geometry.coordinates as [number, number];
+    out.push({
+      object_value: value,
+      geometry: { coordinates: [lng, lat] },
+      last_seen_at: props.last_seen_at as number | string | undefined,
+      first_seen_at: props.first_seen_at as number | string | undefined,
+    });
   }
-  console.log("[mapillary] fetched " + out.length + " sign detections across " + tiles + " tiles");
   return out;
 }
 
-/** Turn raw detections into deduped, newest-wins restriction spots. */
-export function buildSpots(features: RawFeature[]): MapillarySpot[] {
+async function fetchTileVT(token: string, z: number, x: number, y: number): Promise<RawFeature[]> {
+  const url = TILE_URL + "/" + z + "/" + x + "/" + y + "?access_token=" + encodeURIComponent(token);
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= RETRIES; attempt++) {
+    try {
+      const r = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+      if (r.status === 404 || r.status === 204) return []; // empty tile
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return decodeTile(await r.arrayBuffer(), x, y, z);
+    } catch (err) {
+      lastErr = err;
+      if (attempt < RETRIES) await new Promise((res) => setTimeout(res, 400 * attempt));
+    }
+  }
+  throw lastErr;
+}
+
+async function fetchAll(token: string): Promise<RawFeature[]> {
+  const box = bbox();
+  const xMin = lon2tile(box.w, ZOOM);
+  const xMax = lon2tile(box.e, ZOOM);
+  const yMin = lat2tile(box.n, ZOOM); // north edge -> smaller y
+  const yMax = lat2tile(box.s, ZOOM);
+  const tiles: { x: number; y: number }[] = [];
+  for (let x = xMin; x <= xMax; x++) for (let y = yMin; y <= yMax; y++) tiles.push({ x, y });
+
+  const total = tiles.length;
+  console.log(
+    "[mapillary] " + total + " z" + ZOOM + " tiles over bbox " +
+      [box.w, box.s, box.e, box.n].join(",") + " — concurrency " + CONCURRENCY,
+  );
+
+  const out: RawFeature[] = [];
+  let next = 0;
+  let done = 0;
+  let failed = 0;
+  async function worker(): Promise<void> {
+    while (next < tiles.length) {
+      const t = tiles[next++];
+      try {
+        out.push(...(await fetchTileVT(token, ZOOM, t.x, t.y)));
+      } catch {
+        failed++;
+      }
+      done++;
+      if (done % 50 === 0 || done === total) {
+        console.log("[mapillary] " + done + "/" + total + " tiles · " + out.length + " detections · " + failed + " failed");
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
+  console.log("[mapillary] fetched " + out.length + " sign detections (" + failed + "/" + total + " tiles failed)");
+  return out;
+}
+
+/**
+ * Turn raw detections into deduped, newest-wins spots. Parking ("paid") signs
+ * are spatially joined to the zone that contains them so the engine can price
+ * them; a parking sign that falls outside every known zone is dropped rather
+ * than guessed at.
+ */
+export function buildSpots(features: RawFeature[], zones: ZoneRecord[] = []): MapillarySpot[] {
   // newest first so the first detection kept at a location supersedes the rest
   const dated = features
     .map((f) => ({ f, at: toIsoDate(f.last_seen_at ?? f.first_seen_at) }))
@@ -138,17 +230,31 @@ export function buildSpots(features: RawFeature[]): MapillarySpot[] {
     const mapped = f.object_value ? signToSpotType(f.object_value) : null;
     if (!coords || !mapped) continue;
     const [lng, lat] = coords;
+
+    let zone: string | undefined;
+    if (mapped.type === "paid") {
+      const z = zones.find((zz) => pointInRings(lat, lng, zz.polys));
+      if (!z) continue; // can't price a bay with no containing zone — skip
+      zone = z.id;
+    }
+
     const dup = kept.find(
       (k) => k.type === mapped.type && metresBetween(k.lat, k.lng, lat, lng) < DEDUPE_METRES,
     );
     if (dup) continue; // an equal-or-newer detection of this sign is already kept
+
+    const seen = at ? " · seen " + at.slice(0, 7) : "";
     kept.push({
-      n: mapped.label + (at ? " · sign seen " + at.slice(0, 7) : ""),
+      n: mapped.type === "paid" ? "Parking sign (check bay type)" + seen : mapped.label + (at ? " · sign seen " + at.slice(0, 7) : ""),
       type: mapped.type,
       lat,
       lng,
+      zone,
       date: at,
-      note: "Detected street sign (" + f.object_value + ") via Mapillary" + (at ? ", " + at : ""),
+      note:
+        mapped.type === "paid"
+          ? "CPZ/parking sign via Mapillary" + (at ? ", " + at : "") + " — verify bay type & hours on the street"
+          : "Detected street sign (" + f.object_value + ") via Mapillary" + (at ? ", " + at : ""),
     });
   }
   return kept;
@@ -158,7 +264,7 @@ export function buildSpots(features: RawFeature[]): MapillarySpot[] {
  * Fetch live when a token is set (snapshotting the raw detections), fall back to
  * the committed snapshot, and return null (skip) when neither is available.
  */
-export async function loadMapillarySigns(): Promise<MapillarySpot[] | null> {
+export async function loadMapillarySigns(zones: ZoneRecord[] = []): Promise<MapillarySpot[] | null> {
   const token = process.env.MAPILLARY_TOKEN;
   let features: RawFeature[] | null = null;
 
@@ -179,7 +285,11 @@ export async function loadMapillarySigns(): Promise<MapillarySpot[] | null> {
   }
   if (!features) return null;
 
-  const spots = buildSpots(features);
-  console.log("[mapillary] " + spots.length + " restriction spots after dedupe");
+  const spots = buildSpots(features, zones);
+  const paid = spots.filter((s) => s.type === "paid").length;
+  console.log(
+    "[mapillary] " + spots.length + " spots after dedupe (" + paid + " parking, " +
+      (spots.length - paid) + " no-stopping/loading)",
+  );
   return spots;
 }

@@ -58,5 +58,5 @@ const joinZones: ZoneRecord[] = [...precise, ...boroughs];
 writeOrKeep<SpotRecord>(OUT_BAYS, await loadCamdenBays(joinZones), "bay groups");
 writeOrKeep<SpotRecord>(OUT_OSM, await loadOsmKerbs(joinZones), "OSM kerb groups");
 
-// -- restriction signs from Mapillary (pan-London, dated, newest-wins) --
-writeOrKeep<MapillarySpot>(OUT_MAPILLARY, await loadMapillarySigns(), "Mapillary sign spots");
+// -- signs from Mapillary: no-stopping/loading + CPZ parking bays (zone-joined) --
+writeOrKeep<MapillarySpot>(OUT_MAPILLARY, await loadMapillarySigns(joinZones), "Mapillary sign spots");
