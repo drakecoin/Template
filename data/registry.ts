@@ -302,6 +302,20 @@ export const BOROUGHS: BoroughEntry[] = [
       ratePence: 440,
       maxStayHours: 4,
     },
+    portal: {
+      kind: "arcgis",
+      cpz: {
+        // Lambeth open-data "Controlled Parking Zones" (CPZSolid) ArcGIS Online
+        // FeatureServer: per-zone polygons + a free-text HOURS attribute
+        // ("8:30am - 5:30pm Monday - Friday") parsed by the shared schedule parser.
+        layerUrl:
+          "https://services5.arcgis.com/YzAbPjFO62myKADc/arcgis/rest/services/CPZSolid/FeatureServer/0",
+        hoursFields: ["HOURS"],
+        zoneField: "NAME",
+        ratePence: 440,
+        maxStayHours: 4,
+      },
+    },
   },
   {
     borough: "Southwark",
