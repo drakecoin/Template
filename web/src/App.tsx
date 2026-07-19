@@ -296,6 +296,7 @@ export function App() {
           ctaLabel={ctaLabel}
           onCta={onCta}
           onFind={() => runSearch()}
+          onParkHere={parkHereNow}
           onEnterNoMatch={() => showToast("No match — try a street address, postcode or area name")}
           startExpanded={hasSearched}
           destChosen={dest !== null}

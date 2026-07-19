@@ -18,6 +18,8 @@ interface Props {
   onCta: () => void;
   onEnterNoMatch: () => void;
   onFind: () => void;
+  /** Trigger geolocation and jump straight to options around the user. */
+  onParkHere: () => void;
   /** Open with the form already expanded (returning via "Edit"). */
   startExpanded: boolean;
   /** A destination is already chosen — hide suggestions until the query changes. */
@@ -40,9 +42,9 @@ function PinMark({ className }: { className?: string }) {
         y="22"
         textAnchor="middle"
         dominantBaseline="central"
-        fontSize="18"
-        fontWeight="800"
-        fontFamily="Georgia, 'Times New Roman', serif"
+        fontSize="19"
+        fontWeight="900"
+        fontFamily="Alegreya, Georgia, serif"
         fill="var(--accent)"
       >
         P
@@ -142,53 +144,29 @@ export function Landing(props: Props) {
     }
   };
 
-  const showSugs = !props.destChosen && (list.length > 0 || pc !== null || addrHits.length > 0);
+  const showSugs = expanded && !props.destChosen && (list.length > 0 || pc !== null || addrHits.length > 0);
 
-  // First screen: a clean, map-forward splash (no card).
-  if (!expanded) {
-    return (
-      <div className="hero splash">
-        <h1 className="brand-title">Park&nbsp;Up</h1>
-        <div className="splash-mid">
-          <button className="splash-address" onClick={() => setExpanded(true)}>
-            Type an address
-          </button>
-          <PinMark className="splash-pin" />
-        </div>
-        <button className="splash-cta" onClick={props.onCta}>
-          {props.ctaLabel}
-        </button>
-        {props.onInstall && (
-          <button className="install-btn splash-install" onClick={props.onInstall}>
-            Install Park Up on this device
-          </button>
-        )}
-      </div>
-    );
-  }
-
+  // Home screen and search screen are one and the same: a map-forward splash
+  // whose translucent box grows in place to reveal the date/time fields.
   return (
-    <div className="hero expanded">
-      <div className="hero-card">
-        <div className="hero-brand">
-          <PinMark className="brand-pin" />
-          <span className="hero-name">Park Up</span>
-        </div>
-
-        <div className="hero-form">
+    <div className="hero splash">
+      <h1 className="brand-title">Park&nbsp;Up</h1>
+      <div className="splash-mid">
+        <div className={"splash-box" + (expanded ? " open" : "")}>
           <input
             ref={inputRef}
-            className="hero-input"
+            className="splash-input"
             type="text"
-            placeholder="Address, postcode or place"
+            placeholder="Type an address"
             autoComplete="off"
             aria-label="Destination"
             value={props.query}
+            onFocus={() => setExpanded(true)}
             onChange={(e) => props.onQueryChange(e.target.value)}
             onKeyDown={onKeyDown}
           />
           {showSugs && (
-            <div className="hero-sugs">
+            <div className="splash-sugs">
               {pc && (
                 <button className="sug" onClick={() => void props.onPostcode(q, false)}>
                   Use postcode <b>{pc.full || pc.outward}</b>
@@ -208,26 +186,31 @@ export function Landing(props: Props) {
               ))}
             </div>
           )}
-          <div className="when-row">
-            <WhenField label="Date" type="date" value={props.dateVal} onChange={props.onDateChange} />
-            <WhenField label="From" type="time" value={props.fromTime} onChange={props.onFromChange} />
-            <WhenField label="To" type="time" value={props.toTime} onChange={props.onToChange} />
-          </div>
-          <p className="when-hint">Leave “To” empty for a 2-hour stay. Ends earlier than it starts? That’s overnight.</p>
+          {expanded && (
+            <>
+              <div className="splash-when">
+                <WhenField label="Date" type="date" value={props.dateVal} onChange={props.onDateChange} />
+                <WhenField label="From" type="time" value={props.fromTime} onChange={props.onFromChange} />
+                <WhenField label="To" type="time" value={props.toTime} onChange={props.onToChange} />
+              </div>
+              <p className="splash-hint">Leave “To” empty for a 2-hour stay. Ends earlier than it starts? That’s overnight.</p>
+              <button className="splash-find" onClick={props.onCta}>Find parking</button>
+            </>
+          )}
         </div>
 
-        <button className="cta" onClick={props.onCta}>
-          {props.ctaLabel}
+        <button className="splash-pinbtn" onClick={props.onParkHere} aria-label="Park here and now — use my location">
+          <PinMark className="splash-pin" />
         </button>
-        <p className="hero-sub">
-          Checks parking zones, bays, car parks and free streets for your exact times.
-        </p>
-        {props.onInstall && (
-          <button className="install-btn" onClick={props.onInstall}>
-            Install Park Up on this device
-          </button>
-        )}
+        <button className="splash-cta" onClick={props.onParkHere}>
+          Park here and now
+        </button>
       </div>
+      {props.onInstall && (
+        <button className="install-btn splash-install" onClick={props.onInstall}>
+          Install Park Up on this device
+        </button>
+      )}
     </div>
   );
 }

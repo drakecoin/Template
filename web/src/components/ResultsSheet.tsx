@@ -39,6 +39,12 @@ const ICONS: Record<Spot["type"], [string, string]> = {
   noLoad: ["L", "noload"],
 };
 
+/** Glyph + class for a card. Paid bays free during the window drop the "£". */
+function iconFor(r: EvaluatedOption): [string, string] {
+  if (r.spot.type === "paid" && r.valid && r.costPence === 0) return ["✓", "free"];
+  return ICONS[r.spot.type];
+}
+
 /** Format a YYYY-MM-DD date as e.g. "18 Jul 2026". */
 function fmtDate(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
@@ -76,7 +82,7 @@ function Card({
   canScroll: boolean;
   onSelect: (idx: number) => void;
 }) {
-  const [ch, cls] = ICONS[r.spot.type];
+  const [ch, cls] = iconFor(r);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (selected && canScroll) ref.current?.scrollIntoView({ block: "nearest" });
@@ -175,6 +181,17 @@ export function ResultsSheet({
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
     >
+      <button
+        className="recenter-btn"
+        aria-label="Recenter the map on your parking options"
+        onClick={() => window.dispatchEvent(new CustomEvent("parkup:recenter"))}
+      >
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+          <circle cx="12" cy="12" r="7" />
+          <path d="M12 1v3M12 20v3M23 12h-3M4 12H1" />
+          <circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none" />
+        </svg>
+      </button>
       <button className="grab" onClick={cycle} aria-label="Resize the results panel"><i /></button>
       <div className="res-head">
         <h2>
@@ -247,32 +264,38 @@ export function ResultsSheet({
                 <div className="sec-label">All options</div>
               </>
             )}
-            {valid.map((r) => (
-              <Card
-                key={r.spot.n}
-                r={r}
-                idx={results.indexOf(r)}
-                selected={selectedIdx === results.indexOf(r)}
-                canScroll={autoScroll}
-                onSelect={onSelectCard}
-              />
-            ))}
+            {valid.map((r) => {
+              const idx = results.indexOf(r);
+              return (
+                <Card
+                  key={idx}
+                  r={r}
+                  idx={idx}
+                  selected={selectedIdx === idx}
+                  canScroll={autoScroll}
+                  onSelect={onSelectCard}
+                />
+              );
+            })}
             {na.length > 0 && (
               <>
                 <button className="na-toggle" onClick={() => setNaOpen((o) => !o)}>
                   {(naOpen ? "Hide " : "Show ") + na.length + " unavailable for your times " + (naOpen ? "▴" : "▾")}
                 </button>
                 {naOpen &&
-                  na.map((r) => (
-                    <Card
-                      key={r.spot.n}
-                      r={r}
-                      idx={results.indexOf(r)}
-                      selected={selectedIdx === results.indexOf(r)}
-                      canScroll={autoScroll}
-                      onSelect={onSelectCard}
-                    />
-                  ))}
+                  na.map((r) => {
+                    const idx = results.indexOf(r);
+                    return (
+                      <Card
+                        key={idx}
+                        r={r}
+                        idx={idx}
+                        selected={selectedIdx === idx}
+                        canScroll={autoScroll}
+                        onSelect={onSelectCard}
+                      />
+                    );
+                  })}
               </>
             )}
           </>

@@ -63,14 +63,27 @@ const ICONS: Record<Spot["type"], [string, string]> = {
   noLoad: ["L", "noload"],
 };
 
-/** Destination marker: a car, so it reads as "leave the car here". */
-const CAR_SVG =
-  '<svg viewBox="0 0 24 24" width="18" height="18" fill="#fff" aria-hidden="true">' +
-  '<path d="M5 11l1.5-4.5A2 2 0 0 1 8.4 5h7.2a2 2 0 0 1 1.9 1.5L19 11h.5a1.5 1.5 0 0 1 1.5 1.5V17a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H6v1a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-4.5A1.5 1.5 0 0 1 4.5 11H5zm2.2-.5h9.6l-1-3a.5.5 0 0 0-.48-.35H8.68a.5.5 0 0 0-.48.35l-1 3zM7 15a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm10 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"/>' +
+/**
+ * Icon glyph + class for an evaluated option. A paid bay that is FREE during the
+ * searched window drops the "£" for a tick on the free (green) badge, so it
+ * never looks like it will cost money.
+ */
+function iconFor(r: EvaluatedOption): [string, string] {
+  if (r.spot.type === "paid" && r.valid && r.costPence === 0) return ["✓", "free"];
+  return ICONS[r.spot.type];
+}
+
+/** Destination marker: the Park Up mark — a blue location flag with a white "P". */
+const DEST_PIN_SVG =
+  '<svg viewBox="0 0 48 64" width="40" height="53" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+  '<path d="M24 2C13 2 4 11 4 22c0 14.5 20 39 20 39s20-24.5 20-39C44 11 35 2 24 2Z" fill="#1D6FEB" stroke="#fff" stroke-width="2.5"/>' +
+  '<circle cx="24" cy="22" r="12.5" fill="#fff"/>' +
+  '<text x="24" y="23" text-anchor="middle" dominant-baseline="central" font-size="19" font-weight="900" font-family="Alegreya,Georgia,serif" fill="#1D6FEB">P</text>' +
   "</svg>";
 
-function pinIcon(spot: Spot, dim: boolean, win: boolean): L.DivIcon {
-  const [ch, cls] = ICONS[spot.type];
+function pinIcon(r: EvaluatedOption, win: boolean): L.DivIcon {
+  const [ch, cls] = iconFor(r);
+  const dim = !r.valid;
   return L.divIcon({
     className: "",
     html: '<div class="pin ' + cls + (dim ? " dim" : "") + (win ? " win" : "") + '">' + ch + "</div>",
@@ -233,9 +246,9 @@ export function MapView({ dest, window: win, results, selection, onSelect, toast
     destMarkerRef.current = L.marker([dest.lat, dest.lng], {
       icon: L.divIcon({
         className: "",
-        html: '<div class="dest-pin">' + CAR_SVG + "</div>",
-        iconSize: [34, 34],
-        iconAnchor: [17, 17],
+        html: '<div class="dest-flag">' + DEST_PIN_SVG + "</div>",
+        iconSize: [40, 53],
+        iconAnchor: [20, 52],
       }),
       zIndexOffset: 1000,
     }).addTo(map);
@@ -252,7 +265,7 @@ export function MapView({ dest, window: win, results, selection, onSelect, toast
     walkLineRef.current = null;
     if (!results) return;
     results.forEach((r, i) => {
-      const m = L.marker([r.spot.lat, r.spot.lng], { icon: pinIcon(r.spot, !r.valid, false) })
+      const m = L.marker([r.spot.lat, r.spot.lng], { icon: pinIcon(r, false) })
         .bindPopup(
           '<div class="pp-name">' + r.spot.n + "</div>" +
             '<span class="' + (r.costPence === 0 && r.valid ? "pp-cost pp-free" : "pp-cost") + '">' +
@@ -285,7 +298,7 @@ export function MapView({ dest, window: win, results, selection, onSelect, toast
     if (!r) return;
     markersRef.current.forEach((m, j) => {
       const rr = results[j];
-      m.setIcon(pinIcon(rr.spot, !rr.valid, j === selection.idx));
+      m.setIcon(pinIcon(rr, j === selection.idx));
     });
     walkLineRef.current?.remove();
     walkLineRef.current = null;
@@ -303,6 +316,18 @@ export function MapView({ dest, window: win, results, selection, onSelect, toast
       markersRef.current[selection.idx]?.openPopup();
     }
   }, [selection, results, dest]);
+
+  // recenter button (in the results sheet) asks the map to reframe the options
+  useEffect(() => {
+    const onRecenter = () => {
+      const map = mapRef.current;
+      if (!map) return;
+      if (results && results.length) fitToInitialOptions(map, dest, results);
+      else if (dest) map.setView([dest.lat, dest.lng], 15, { animate: true });
+    };
+    window.addEventListener("parkup:recenter", onRecenter);
+    return () => window.removeEventListener("parkup:recenter", onRecenter);
+  }, [dest, results]);
 
   return (
     <div className="map-shell">
