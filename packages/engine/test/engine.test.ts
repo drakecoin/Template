@@ -125,8 +125,18 @@ describe("SPEC §6 scenarios — Camden Town", () => {
 
 describe("no-stopping and no-loading areas", () => {
   it("red routes are never parkable, whatever the time", () => {
-    const day = evaluate(CAMDEN_TOWN, d(14, 11), d(14, 13), CURATED);
-    const night = evaluate(CAMDEN_TOWN, d(18, 23, 30), d(19, 1), CURATED);
+    // The pan-London red-route network is imported (RED_ROUTE_SPOTS) rather than
+    // hand-seeded, so pin an explicit noStop spot to test the engine behaviour.
+    const redSpot = {
+      n: "Camden High Street (red route)",
+      type: "noStop" as const,
+      lat: CAMDEN_TOWN.lat,
+      lng: CAMDEN_TOWN.lng,
+      note: "TfL red route — no stopping at any time",
+    };
+    const ds = { zones: ZONES, spots: [redSpot] };
+    const day = evaluate(CAMDEN_TOWN, d(14, 11), d(14, 13), ds);
+    const night = evaluate(CAMDEN_TOWN, d(18, 23, 30), d(19, 1), ds);
     for (const res of [day, night]) {
       const red = byName(res, "Camden High Street (red route)");
       expect(red.valid).toBe(false);
@@ -192,8 +202,8 @@ describe("destination streets (zone lookup by polygon)", () => {
   });
 
   it("outside every zone the destination street is free with a data caveat", () => {
-    // Wimbledon (Merton) — no borough fallback configured there
-    const res = evaluate({ lat: 51.42, lng: -0.21 }, d(14, 11), d(14, 13), BOROUGH_DATASET, {
+    // Surrey, well outside Greater London — no borough boundary reaches here
+    const res = evaluate({ lat: 51.2, lng: -0.2 }, d(14, 11), d(14, 13), BOROUGH_DATASET, {
       destinationStreets: true,
     });
     const street = byName(res, "Streets at your destination");
@@ -217,7 +227,7 @@ describe("borough fallback zones (real boundary data)", () => {
     expect(zoneAt(HIGHBURY, BOROUGH_ZONES)?.id).toBe("boro-islington");
     expect(zoneAt({ lat: 51.5504, lng: -0.1425 }, BOROUGH_ZONES)?.id).toBe("boro-camden"); // Kentish Town
     expect(zoneAt(ANGEL, BOROUGH_ZONES)?.id).toBe("boro-islington"); // Angel too, until per-zone data is imported
-    expect(zoneAt({ lat: 51.42, lng: -0.21 }, BOROUGH_ZONES)).toBeUndefined(); // Wimbledon
+    expect(zoneAt({ lat: 51.2, lng: -0.2 }, BOROUGH_ZONES)).toBeUndefined(); // Surrey, outside London
   });
 
   it("imported per-zone CPZs outrank the borough fallback", () => {

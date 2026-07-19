@@ -1,8 +1,8 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { BOROUGH_CONFIG } from "../config.js";
 import { outerRings, toLatLngRing, type GeoFeatureCollection } from "../geo.js";
+import { BOROUGHS } from "../registry.js";
 
 const SOURCE_URL =
   "https://raw.githubusercontent.com/radoi90/housequest-data/master/london_boroughs.geojson";
@@ -40,27 +40,30 @@ async function loadBoundaries(): Promise<GeoFeatureCollection> {
   }
 }
 
-/** Borough-level fallback zones: real boundaries + configured indicative hours. */
+/** Borough-level fallback zones: real boundaries + registry indicative hours. */
 export async function loadBoroughZones(): Promise<ZoneRecord[]> {
   const fc = await loadBoundaries();
   const checkedAt = new Date().toISOString().slice(0, 10);
-  return BOROUGH_CONFIG.map((cfg) => {
-    const feature = fc.features.find((f) => f.properties.name === cfg.borough);
-    if (!feature) throw new Error("borough not found in boundaries: " + cfg.borough);
+  const zones: ZoneRecord[] = [];
+  for (const entry of BOROUGHS) {
+    if (!entry.fallback) continue;
+    const feature = fc.features.find((f) => f.properties.name === entry.borough);
+    if (!feature) throw new Error("borough not found in boundaries: " + entry.borough);
     const polys = outerRings(feature).map((ring) => toLatLngRing(ring, TOLERANCE));
     const points = polys.reduce((n, r) => n + r.length, 0);
-    console.log("[boroughs] " + cfg.borough.padEnd(24) + points + " boundary points");
-    return {
-      id: cfg.id,
-      name: cfg.name,
+    console.log("[boroughs] " + entry.borough.padEnd(24) + points + " boundary points");
+    zones.push({
+      id: entry.fallback.id,
+      name: entry.fallback.name,
       kind: "borough" as const,
       verified: false,
-      src: cfg.src,
+      src: entry.src,
       checkedAt,
-      sched: cfg.sched,
-      ratePence: cfg.ratePence,
-      maxStayHours: cfg.maxStayHours,
+      sched: entry.fallback.sched,
+      ratePence: entry.fallback.ratePence,
+      maxStayHours: entry.fallback.maxStayHours,
       polys,
-    };
-  });
+    });
+  }
+  return zones;
 }

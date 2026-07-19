@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ZoneRecord } from "./boroughs.js";
-import type { SpotRecord } from "./camdenBays.js";
+import type { SpotRecord } from "./socrataBays.js";
 
 /**
  * Street-side parking from OpenStreetMap kerb tagging (the parking:left/right/

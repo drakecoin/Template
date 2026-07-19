@@ -69,7 +69,18 @@ Best Overall, Best Free, Closest, Cheapest Paid.
 - `npm run etl` — rebuild zone data from borough sources (in `data/`)
 
 ## Next tasks (see docs/DATA_PIPELINE.md)
-1. Mapillary detected-sign importer → dated restriction/hours signals (in progress).
-2. TfL red routes → pan-London `noStop`.
-3. Config-driven borough registry so new Socrata/ArcGIS boroughs are declarative.
-4. Parsed tariff tables; kerb-level bay data.
+1. Mapillary detected-sign importer → dated restriction/hours signals (done).
+2. Config-driven borough registry (`data/registry.ts`) — all 33 boroughs slot in
+   declaratively: a `fallback` CPZ (real boundary + indicative hours) and an
+   optional Socrata `portal` (CPZ + bays). Generic loaders (`sources/socrataCpz`,
+   `sources/socrataBays`) loop over it; ETL aggregates per-borough with
+   keep-on-skip. Adding all 33 fallbacks unlocked Mapillary parking signs 15→172.
+   Outer-borough hours are indicative placeholders (flagged unverified) — replace
+   with per-zone portal data as boroughs are wired up. (done)
+3. TfL red routes → pan-London `noStop` (done). `data/sources/tflRedRoutes.ts`
+   imports the arterial no-stopping network from OSM `no_stopping` tagging via
+   Overpass, samples points along each way, and writes `spots.redroutes.json`
+   (~628 points / 349 roads). Loaded by engine `importedRedRoutes.ts` into
+   `ALL_SPOTS`; the old hand-seeded red-route points in `data.ts` were removed.
+4. Wire more borough portals into the registry (ArcGIS support alongside Socrata);
+   parsed tariff tables; kerb-level bay data beyond Camden.
