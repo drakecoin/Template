@@ -26,7 +26,8 @@ import type { ZoneRecord } from "./boroughs.js";
  */
 const TILE_URL = "https://tiles.mapillary.com/maps/vtp/mly_map_feature_traffic_sign/2";
 const ZOOM = 14; // Mapillary recommends z14 for map features
-const CONCURRENCY = 8;
+// Gentler by default to stay under the tile API's rate limit on big runs.
+const CONCURRENCY = Number(process.env.MAPILLARY_CONCURRENCY) || 4;
 
 // Greater London bounding box. Tunable via env for a quicker first run, e.g.
 // inner London only:  MAPILLARY_BBOX="-0.23,51.46,0.0,51.56" npm run etl
@@ -85,9 +86,9 @@ export function signToSpotType(objectValue: string): { type: MapillarySpot["type
   const v = objectValue.toLowerCase();
   if (/no-loading/.test(v)) return { type: "noLoad", label: "No loading" };
   if (/no-stopping|clearway/.test(v)) return { type: "noStop", label: "No stopping" };
-  if (/no-parking/.test(v)) return null; // "no parking" — must not become a paid bay
-  if (/parking/.test(v)) return { type: "paid", label: "Parking" };
-  return null;
+  if (/no-parking|end-of-parking/.test(v)) return null; // "no parking" / "zone ends" — not a bay
+  if (/information--parking/.test(v)) return { type: "paid", label: "Parking" }; // blue "P" parking place
+  return null; // other parking-* signs (e.g. parking-restrictions) are ambiguous — skip
 }
 
 function toIsoDate(ts: number | string | undefined): string {
@@ -164,6 +165,12 @@ async function fetchTileVT(token: string, z: number, x: number, y: number): Prom
     try {
       const r = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
       if (r.status === 404 || r.status === 204) return []; // empty tile
+      if (r.status === 429) {
+        // rate limited — honour Retry-After (capped) and try again
+        const wait = Math.min(10000, (Number(r.headers.get("retry-after")) || 2) * 1000);
+        await new Promise((res) => setTimeout(res, wait));
+        throw new Error("HTTP 429 (rate limited)");
+      }
       if (!r.ok) throw new Error("HTTP " + r.status);
       return decodeTile(await r.arrayBuffer(), x, y, z);
     } catch (err) {
@@ -184,12 +191,25 @@ async function fetchAll(token: string): Promise<RawFeature[]> {
   for (let x = xMin; x <= xMax; x++) for (let y = yMin; y <= yMax; y++) tiles.push({ x, y });
 
   const total = tiles.length;
+
+  // Preflight: probe one tile so a bad token or a hard block fails fast with a
+  // clear reason instead of grinding through every tile.
+  try {
+    await fetchTileVT(token, ZOOM, tiles[0].x, tiles[0].y);
+  } catch (err) {
+    throw new Error(
+      "preflight tile failed (" + String(err) + ") — check MAPILLARY_TOKEN is set in this shell " +
+        "and has read access; if it's a 429 you're being rate limited (lower MAPILLARY_CONCURRENCY).",
+    );
+  }
+
   console.log(
     "[mapillary] " + total + " z" + ZOOM + " tiles over bbox " +
       [box.w, box.s, box.e, box.n].join(",") + " — concurrency " + CONCURRENCY,
   );
 
   const out: RawFeature[] = [];
+  const errSamples: string[] = [];
   let next = 0;
   let done = 0;
   let failed = 0;
@@ -198,8 +218,9 @@ async function fetchAll(token: string): Promise<RawFeature[]> {
       const t = tiles[next++];
       try {
         out.push(...(await fetchTileVT(token, ZOOM, t.x, t.y)));
-      } catch {
+      } catch (err) {
         failed++;
+        if (errSamples.length < 3) errSamples.push(String(err));
       }
       done++;
       if (done % 50 === 0 || done === total) {
@@ -208,6 +229,7 @@ async function fetchAll(token: string): Promise<RawFeature[]> {
     }
   }
   await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
+  if (errSamples.length) console.log("[mapillary] sample failures: " + errSamples.join(" | "));
   console.log("[mapillary] fetched " + out.length + " sign detections (" + failed + "/" + total + " tiles failed)");
   return out;
 }

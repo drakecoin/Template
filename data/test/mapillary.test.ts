@@ -23,6 +23,11 @@ describe("mapillary sign mapping", () => {
     expect(signToSpotType("regulatory--no-parking-or-no-stopping--g1")?.type).toBe("noStop");
   });
 
+  it("excludes ambiguous parking signs that aren't bays", () => {
+    expect(signToSpotType("regulatory--end-of-parking-zone--g2")).toBeNull();
+    expect(signToSpotType("regulatory--parking-restrictions--g2")).toBeNull();
+  });
+
   it("ignores unrelated signs", () => {
     expect(signToSpotType("regulatory--maximum-speed-limit-30--g1")).toBeNull();
     expect(signToSpotType("warning--curve-left--g1")).toBeNull();
