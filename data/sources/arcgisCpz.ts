@@ -153,21 +153,60 @@ function snapshotPath(entry: BoroughEntry): string {
   return join(here, "..", "raw", base + "_cpz.geojson");
 }
 
+interface EsriResponse {
+  features?: { attributes?: Record<string, unknown>; geometry?: { rings?: number[][][] } }[];
+}
+
+/** Convert an ArcGIS esriJSON polygon response (WGS84) to a GeoJSON collection. */
+function esriToFeatureCollection(esri: EsriResponse): GeoFeatureCollection {
+  const features: GeoFeatureCollection["features"] = [];
+  for (const f of esri.features ?? []) {
+    const rings = f.geometry?.rings;
+    if (!Array.isArray(rings) || !rings.length) continue;
+    // Treat every ring as its own polygon outer ring (CPZ zones are solid, so
+    // ignoring hole nesting is safe and outerRings() reads them all).
+    features.push({
+      type: "Feature",
+      properties: f.attributes ?? {},
+      geometry: { type: "MultiPolygon", coordinates: rings.map((r) => [r]) },
+    });
+  }
+  return { type: "FeatureCollection", features };
+}
+
 async function fetchLive(entry: BoroughEntry): Promise<GeoFeatureCollection> {
   const portal = entry.portal as ArcgisPortal;
   const cpz = portal.cpz!;
   const label = entry.zoneIdPrefix;
   const fields = [cpz.zoneField, ...cpz.hoursFields].filter(Boolean).join(",");
   const base = cpz.layerUrl.replace(/\/+$/, "") + "/query";
-  const url =
-    base + "?where=1%3D1&outFields=" + encodeURIComponent(fields) + "&f=geojson";
+  const enc = encodeURIComponent(fields);
+
+  // 1. GeoJSON — hosted ArcGIS Online FeatureServers serve this directly.
+  try {
+    const url = base + "?where=1%3D1&outFields=" + enc + "&f=geojson";
+    const r = await fetch(url, { signal: AbortSignal.timeout(30000) });
+    if (r.ok) {
+      const fc = (await r.json()) as GeoFeatureCollection;
+      const polygonal = fc.features?.filter((f) => f.geometry && /Polygon/i.test(f.geometry.type));
+      if (polygonal?.length) {
+        console.log("[" + label + "] arcgis layer returned " + polygonal.length + " polygon features (geojson)");
+        return { type: "FeatureCollection", features: polygonal };
+      }
+    }
+  } catch {
+    /* fall through to esriJSON */
+  }
+
+  // 2. esriJSON — older / self-hosted MapServers don't offer f=geojson. Ask for
+  // WGS84 (outSR=4326) so no reprojection is needed, and convert the rings.
+  const url = base + "?where=1%3D1&outFields=" + enc + "&returnGeometry=true&outSR=4326&f=json";
   const r = await fetch(url, { signal: AbortSignal.timeout(30000) });
   if (!r.ok) throw new Error("HTTP " + r.status);
-  const fc = (await r.json()) as GeoFeatureCollection;
-  const polygonal = fc.features?.filter((f) => f.geometry && /Polygon/i.test(f.geometry.type));
-  if (!polygonal?.length) throw new Error("no polygon features returned");
-  console.log("[" + label + "] arcgis layer returned " + polygonal.length + " polygon features");
-  return { type: "FeatureCollection", features: polygonal };
+  const fc = esriToFeatureCollection((await r.json()) as EsriResponse);
+  if (!fc.features.length) throw new Error("no polygon features returned");
+  console.log("[" + label + "] arcgis layer returned " + fc.features.length + " polygon features (esriJSON)");
+  return fc;
 }
 
 /**

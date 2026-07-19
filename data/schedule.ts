@@ -26,6 +26,14 @@ const SEGMENT_RE =
 const SEGMENT_TIME_FIRST_RE =
   /(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?\s*(?:-|–|to)\s*(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?\s+(sun|mon|tue|wed|thu|fri|sat)[a-z]*(?:\s*(?:-|–|to)\s*(sun|mon|tue|wed|thu|fri|sat)[a-z]*)?/g;
 
+// A standalone day-group and a standalone time-range, used to handle strings
+// where one day-group governs several time-ranges, e.g.
+// "10am - 11am & 3pm - 4pm Mon - Fri" (both periods apply Mon–Fri).
+const DAY_GROUP_RE =
+  /(all\s*week|every\s*day|daily|7\s*days)|(sun|mon|tue|wed|thu|fri|sat)[a-z]*(?:\s*(?:-|–|to)\s*(sun|mon|tue|wed|thu|fri|sat)[a-z]*)?/g;
+const TIME_RANGE_RE =
+  /(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?\s*(?:-|–|to)\s*(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?/g;
+
 function toMinuteTime(hourStr: string, minStr: string | undefined, meridiem: string | undefined): string {
   let h = Number(hourStr);
   const m = minStr ? Number(minStr) : 0;
@@ -57,14 +65,17 @@ function buildEntry(
   m2: string | undefined,
   mer2: string | undefined,
 ): SchedEntry | null {
-  // "8-6pm": a meridiem on the end time only also applies to the start
-  // when the start would otherwise be later than the end.
-  const from0 = toMinuteTime(h1, m1, mer1raw ?? undefined);
-  let from = from0;
   const to = toMinuteTime(h2, m2, mer2 ?? undefined);
-  if (!mer1raw && mer2 === "pm" && from0 > to) {
-    from = toMinuteTime(h1, m1, "pm");
-    if (from > to) from = from0;
+  let from: string;
+  if (mer1raw) {
+    from = toMinuteTime(h1, m1, mer1raw);
+  } else if (mer2) {
+    // No start meridiem: assume it matches the end's ("2 - 3pm" = 2pm–3pm).
+    // If that inverts the range, use the opposite ("8 - 6.30pm" = 8am–6:30pm).
+    const same = toMinuteTime(h1, m1, mer2);
+    from = same < to ? same : toMinuteTime(h1, m1, mer2 === "pm" ? "am" : "pm");
+  } else {
+    from = toMinuteTime(h1, m1, undefined);
   }
   if (from >= to) return null; // unparseable / overnight controls not supported
   const days = everyday
@@ -73,7 +84,15 @@ function buildEntry(
   return { days, from, to };
 }
 
+/** All-day, every-day control ("at any time" / "24 hours"). */
+const ALLWEEK: SchedEntry = { days: [0, 1, 2, 3, 4, 5, 6], from: "00:00", to: "23:59" };
+
 export function parseScheduleText(text: string): SchedEntry[] | null {
+  // "At any time" / "at all times" / "24 hours" means controlled around the
+  // clock, every day — must never be under-read as weekday-only (a £130-PCN risk).
+  if (/\bat any time\b|\bat all times\b|\b24\s*hours?\b|\b24\/7\b/i.test(text)) {
+    return [{ ...ALLWEEK, days: [...ALLWEEK.days] }];
+  }
   const entries: SchedEntry[] = [];
   const seen = new Set<string>();
   const add = (e: SchedEntry | null) => {
@@ -83,7 +102,26 @@ export function parseScheduleText(text: string): SchedEntry[] | null {
     seen.add(key);
     entries.push(e);
   };
-  const norm = text.toLowerCase();
+  // Normalise "12 noon"/"noon" -> 12pm and "midnight" -> 23:59 so the time
+  // regexes below can read them.
+  const norm = text
+    .toLowerCase()
+    .replace(/12\s*noon|\bnoon\b/g, "12pm")
+    .replace(/\bmidnight\b/g, "23:59");
+
+  // When a single day-group governs the whole string, apply it to every
+  // time-range — so "10am - 11am & 3pm - 4pm Mon - Fri" keeps BOTH periods
+  // (dropping one would hide real control → £130-PCN risk).
+  const dayGroups = [...norm.matchAll(DAY_GROUP_RE)];
+  if (dayGroups.length === 1) {
+    const [, everyday, dayFrom, dayTo] = dayGroups[0];
+    for (const t of norm.matchAll(TIME_RANGE_RE)) {
+      const [, h1, m1, mer1, h2, m2, mer2] = t;
+      add(buildEntry(everyday, dayFrom, dayTo, h1, m1, mer1, h2, m2, mer2));
+    }
+    if (entries.length) return entries;
+  }
+
   for (const m of norm.matchAll(SEGMENT_RE)) {
     const [, everyday, dayFrom, dayTo, h1, m1, mer1, h2, m2, mer2] = m;
     add(buildEntry(everyday, dayFrom, dayTo, h1, m1, mer1, h2, m2, mer2));

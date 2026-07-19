@@ -66,8 +66,43 @@ describe("parseScheduleText", () => {
     ]);
   });
 
-  it("returns null for unrecognisable text instead of guessing", () => {
+  it("reads 'at any time' / '24 hours' as round-the-clock every day", () => {
+    const allWeek = [{ days: [0, 1, 2, 3, 4, 5, 6], from: "00:00", to: "23:59" }];
+    expect(parseScheduleText("At any time")).toEqual(allWeek);
+    expect(parseScheduleText("At Any Time (permit holders only)")).toEqual(allWeek);
+    expect(parseScheduleText("24 hours")).toEqual(allWeek);
+  });
+
+  it("handles noon and midnight (Harrow): '8am - Midnight Mon - Sun'", () => {
+    expect(parseScheduleText("8am - Midnight Mon - Sun")).toEqual([
+      { days: [1, 2, 3, 4, 5, 6, 0], from: "08:00", to: "23:59" },
+    ]);
+    expect(parseScheduleText("11am - 12 noon Mon - Fri")).toEqual([
+      { days: [1, 2, 3, 4, 5], from: "11:00", to: "12:00" },
+    ]);
+  });
+
+  it("infers the start meridiem from the end: '2 - 3pm' is 2pm, not 2am", () => {
+    expect(parseScheduleText("2 - 3pm Mon - Fri")).toEqual([
+      { days: [1, 2, 3, 4, 5], from: "14:00", to: "15:00" },
+    ]);
+    // but only when it keeps the range valid: "8 - 6.30pm" is 8am, not 8pm
+    expect(parseScheduleText("8 - 6.30pm Mon - Sat")).toEqual([
+      { days: [1, 2, 3, 4, 5, 6], from: "08:00", to: "18:30" },
+    ]);
+  });
+
+  it("applies one trailing day-group to every period: '10am - 11am & 3pm - 4pm Mon - Fri'", () => {
+    expect(parseScheduleText("10am - 11am & 3pm - 4pm Mon - Fri")).toEqual([
+      { days: [1, 2, 3, 4, 5], from: "10:00", to: "11:00" },
+      { days: [1, 2, 3, 4, 5], from: "15:00", to: "16:00" },
+    ]);
+  });
+
+  it("returns null for unrecognisable or ambiguous text instead of guessing", () => {
     expect(parseScheduleText("See street signage")).toBeNull();
     expect(parseScheduleText("")).toBeNull();
+    // no meridiems at all — don't guess whether "8-6.30" is am or pm
+    expect(parseScheduleText("8-6.30 Mon - Sat")).toBeNull();
   });
 });

@@ -658,5 +658,19 @@ export const BOROUGHS: BoroughEntry[] = [
       ratePence: 320,
       maxStayHours: 4,
     },
+    portal: {
+      kind: "arcgis",
+      cpz: {
+        // Harrow self-hosted ArcGIS Server (esriJSON only — the connector's
+        // f=json fallback handles it). Joined layer, so fields are qualified;
+        // CPZ = zone code, TIMES = free-text control hours.
+        layerUrl:
+          "https://mapping.harrow.gov.uk/server/rest/services/Public/Transport_and_Streets_2/MapServer/1",
+        hoursFields: ["TRANSPORTATION_USER.CPZ_ZONE_BOUNDARIES.TIMES"],
+        zoneField: "TRANSPORTATION_USER.CPZ_ZONE_BOUNDARIES.CPZ",
+        ratePence: 320,
+        maxStayHours: 4,
+      },
+    },
   },
 ];
