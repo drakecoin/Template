@@ -152,6 +152,7 @@ function snapshotPath(entry: BoroughEntry): string {
 
 async function fetchLive(entry: BoroughEntry): Promise<GeoFeatureCollection> {
   const portal = entry.portal!;
+  if (portal.kind !== "socrata") throw new Error("not a socrata portal");
   const bays = portal.bays!;
   const label = entry.zoneIdPrefix + "-bays";
   const discovered = await discoverDatasets(portal.domain, bays.query, label);
@@ -182,7 +183,7 @@ export async function loadSocrataBays(
   entry: BoroughEntry,
   zones: ZoneRecord[],
 ): Promise<SpotRecord[] | null> {
-  if (!entry.portal?.bays) return null;
+  if (entry.portal?.kind !== "socrata" || !entry.portal.bays) return null;
   const label = entry.zoneIdPrefix + "-bays";
   const snapshot = snapshotPath(entry);
   let fc: GeoFeatureCollection;

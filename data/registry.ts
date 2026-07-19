@@ -55,6 +55,55 @@ export interface SocrataPortal {
   bays?: BaysPortal;
 }
 
+/**
+ * How to import a borough's per-zone CPZ layer from an ArcGIS Feature/Map
+ * Service — the Esri "INSPIRE" open-data pattern most London boroughs use.
+ * `layerUrl` points straight at the queryable layer (…/FeatureServer/0 or
+ * …/MapServer/10); there's no Socrata-style catalogue to discover it through.
+ */
+export interface ArcgisCpzPortal {
+  layerUrl: string;
+  /** Attribute columns whose space-joined text carries the control schedule. */
+  hoursFields: string[];
+  /** Zone-code column; omit when the code lives inside the hours text ("Zone X"). */
+  zoneField?: string;
+  ratePence: number;
+  maxStayHours: number;
+}
+
+export interface ArcgisPortal {
+  kind: "arcgis";
+  cpz?: ArcgisCpzPortal;
+}
+
+/**
+ * How to import a borough's CPZ layer from an Astun **iShare** site (OpenLayers
+ * front-end over a MapServer WFS at {baseUrl}/getows.ashx). Geometry comes back
+ * as GML in native British National Grid and is reprojected to WGS84; control
+ * hours come from a free-text attribute (`hoursField`).
+ */
+export interface IshareCpzPortal {
+  /** iShare site root, e.g. "https://my.haringey.gov.uk/". */
+  baseUrl: string;
+  /** Map profile, e.g. "mapsources/AllMaps". */
+  mapsource: string;
+  /** WFS feature type / layer name, e.g. "Controlled_Parking_Zones". */
+  typename: string;
+  /** Attribute carrying the zone name. */
+  nameField: string;
+  /** Attribute carrying the free-text control hours. */
+  hoursField: string;
+  ratePence: number;
+  maxStayHours: number;
+}
+
+export interface IsharePortal {
+  kind: "ishare";
+  cpz?: IshareCpzPortal;
+}
+
+export type Portal = SocrataPortal | ArcgisPortal | IsharePortal;
+
 /** Borough-level fallback zone: real boundary + indicative, unverified hours. */
 export interface BoroughFallback {
   id: string;
@@ -76,7 +125,7 @@ export interface BoroughEntry {
   /** Borough-wide indicative fallback zone (null only if never controlled). */
   fallback: BoroughFallback | null;
   /** Optional live open-data portal for precise CPZ/bay data. */
-  portal?: SocrataPortal;
+  portal?: Portal;
 }
 
 const MF = [1, 2, 3, 4, 5];
@@ -228,6 +277,18 @@ export const BOROUGHS: BoroughEntry[] = [
       ratePence: 480,
       maxStayHours: 4,
     },
+    portal: {
+      kind: "arcgis",
+      cpz: {
+        // LB Hammersmith & Fulham CPZ layer (Esri INSPIRE) hosted on the RBKC
+        // shared ArcGIS server; separate ZONE_/DAYS/TIME_ columns.
+        layerUrl: "https://www.rbkc.gov.uk/arcgis/rest/services/LBHF/INSPIRE/MapServer/10",
+        zoneField: "ZONE_",
+        hoursFields: ["DAYS", "TIME_"],
+        ratePence: 250,
+        maxStayHours: 4,
+      },
+    },
   },
   {
     borough: "Lambeth",
@@ -274,13 +335,27 @@ export const BOROUGHS: BoroughEntry[] = [
     borough: "Haringey",
     displayName: "Haringey",
     zoneIdPrefix: "hgy",
-    src: "https://www.haringey.gov.uk/parking-roads-and-travel/parking",
+    src: "https://haringey.gov.uk/parking/cpzs/all-cpz-hours",
     fallback: {
       id: "boro-haringey",
       name: "Haringey CPZ (most streets)",
       sched: [{ days: MF, from: "08:00", to: "18:30" }],
       ratePence: 420,
       maxStayHours: 4,
+    },
+    portal: {
+      kind: "ishare",
+      cpz: {
+        // Haringey's CPZ map is an Astun iShare site; its MapServer WFS carries
+        // per-zone polygons + a free-text `op_times` control-hours attribute.
+        baseUrl: "https://my.haringey.gov.uk/",
+        mapsource: "mapsources/AllMaps",
+        typename: "Controlled_Parking_Zones",
+        nameField: "cpz_name",
+        hoursField: "op_times",
+        ratePence: 420,
+        maxStayHours: 4,
+      },
     },
   },
   {
@@ -504,6 +579,18 @@ export const BOROUGHS: BoroughEntry[] = [
       sched: [{ days: MF, from: "08:30", to: "18:30" }],
       ratePence: 340,
       maxStayHours: 4,
+    },
+    portal: {
+      kind: "arcgis",
+      cpz: {
+        // RB Kingston "Controlled Parking Zones (INSPIRE)" feature service; one
+        // combined TimeOfOperation string carries code + hours + area name.
+        layerUrl:
+          "https://services2.arcgis.com/HGokIRbN2kiuIxW5/arcgis/rest/services/CPZ_updated/FeatureServer/0",
+        hoursFields: ["TimeOfOperation"],
+        ratePence: 340,
+        maxStayHours: 4,
+      },
     },
   },
   {

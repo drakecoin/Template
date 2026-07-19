@@ -302,9 +302,9 @@ export function ResultsSheet({
         )}
       </div>
       <div className="disclaimer">
-        Zone hours for Islington, Camden &amp; Westminster follow the borough websites (tap a zone
-        for the source). Other zones, tariffs &amp; bay positions are indicative — always check
-        street signage.
+        Zone hours for Camden, Islington, Westminster, Kingston, Hammersmith &amp; Fulham and Haringey
+        follow the borough websites (tap a zone for the source). Other zones, tariffs &amp; bay
+        positions are indicative — always check street signage.
       </div>
     </div>
   );

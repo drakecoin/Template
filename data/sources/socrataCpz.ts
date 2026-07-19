@@ -37,7 +37,8 @@ export interface CpzSpec {
 }
 
 function specFor(entry: BoroughEntry): CpzSpec | null {
-  const cpz = entry.portal?.cpz;
+  if (entry.portal?.kind !== "socrata") return null;
+  const cpz = entry.portal.cpz;
   if (!cpz) return null;
   // Fall back to the borough's indicative hours when the portal gives us none.
   const defaultSched = entry.fallback?.sched ?? [
@@ -166,6 +167,7 @@ function snapshotPath(entry: BoroughEntry): string {
 
 async function fetchLive(entry: BoroughEntry): Promise<GeoFeatureCollection> {
   const portal = entry.portal!;
+  if (portal.kind !== "socrata") throw new Error("not a socrata portal");
   const cpz = portal.cpz!;
   const label = entry.zoneIdPrefix;
   const discovered = await discoverDatasets(portal.domain, cpz.query, label);
@@ -214,6 +216,6 @@ export async function loadSocrataCpz(entry: BoroughEntry): Promise<ZoneRecord[] 
     }
   }
   const zones = transformCpzFeatures(fc, new Date().toISOString().slice(0, 10), spec);
-  console.log("[" + label + "] " + zones.length + " per-zone CPZs (src https://" + entry.portal!.domain + "/)");
+  console.log("[" + label + "] " + zones.length + " per-zone CPZs (socrata)");
   return zones;
 }

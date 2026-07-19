@@ -82,5 +82,26 @@ Best Overall, Best Free, Closest, Cheapest Paid.
    Overpass, samples points along each way, and writes `spots.redroutes.json`
    (~628 points / 349 roads). Loaded by engine `importedRedRoutes.ts` into
    `ALL_SPOTS`; the old hand-seeded red-route points in `data.ts` were removed.
-4. Wire more borough portals into the registry (ArcGIS support alongside Socrata);
-   parsed tariff tables; kerb-level bay data beyond Camden.
+4. ArcGIS Feature/Map Service CPZ import alongside Socrata (done).
+   `data/sources/arcgisCpz.ts` + a `kind:"arcgis"` portal in the registry point
+   straight at a layer REST URL (…/FeatureServer/0 or …/MapServer/10), query it
+   as GeoJSON, and parse control hours via the shared schedule parser. Wired:
+   Kingston (RB Kingston INSPIRE CPZ, combined `TimeOfOperation` string → 28
+   verified zones) and Hammersmith & Fulham (LBHF INSPIRE CPZ, separate
+   ZONE_/DAYS/TIME_ columns → 31 verified zones).
+5. Astun **iShare** WFS CPZ import (done). `data/sources/ishareCpz.ts` +
+   a `kind:"ishare"` portal fetch a borough's MapServer WFS (GML, native British
+   National Grid), reproject EPSG:27700→WGS84 via `geo.osgb36ToWgs84`, and parse
+   the free-text `op_times` control hours. **Haringey** wired (my.haringey.gov.uk
+   iShare, `Controlled_Parking_Zones` layer → 43 verified per-zone CPZs). Only
+   the regular (non-event) hours drive the engine: Tottenham-stadium "event day"
+   clauses are stripped and event-day-only zones skipped (never present a zone as
+   always-controlled when it isn't — §7). `zones.precise.json` now carries
+   Camden + Kingston + H&F + Haringey (151 zones).
+6. Event-day CPZ rules captured for a FUTURE match-day feature (done, data only —
+   no connector). `transformIshareEvents` writes `zones.events.json` (15 Haringey
+   zones: venue, event-day `sched`, `bankHoliday` window, `regularSched`, lossless
+   `rawOpTimes`, polygons). The engine does NOT consume it yet. Plan + record
+   shape in `docs/EVENT_DAYS.md`; parser in `data/sources/eventControl.ts`.
+7. Wire more borough portals; parsed tariff tables (COST columns); kerb-level
+   bay data beyond Camden; build the match-day feed + engine hook (docs/EVENT_DAYS.md).

@@ -20,6 +20,8 @@ import { BOROUGHS } from "./registry.js";
 import { loadBoroughZones, type ZoneRecord } from "./sources/boroughs.js";
 import { loadMapillarySigns, type MapillarySpot } from "./sources/mapillary.js";
 import { loadOsmKerbs } from "./sources/osm.js";
+import { loadArcgisCpz } from "./sources/arcgisCpz.js";
+import { loadIshareCpz, loadIshareEvents, type EventZoneRecord } from "./sources/ishareCpz.js";
 import { loadSocrataBays, type SpotRecord } from "./sources/socrataBays.js";
 import { loadSocrataCpz } from "./sources/socrataCpz.js";
 import { loadRedRoutes, type RedRouteSpot } from "./sources/tflRedRoutes.js";
@@ -32,6 +34,7 @@ const OUT_BAYS = join(OUT_DIR, "spots.bays.json");
 const OUT_OSM = join(OUT_DIR, "spots.osm.json");
 const OUT_MAPILLARY = join(OUT_DIR, "spots.mapillary.json");
 const OUT_REDROUTES = join(OUT_DIR, "spots.redroutes.json");
+const OUT_EVENTS = join(OUT_DIR, "zones.events.json");
 
 function readExisting<T>(path: string): T[] {
   return existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as T[]) : [];
@@ -61,7 +64,12 @@ console.log("wrote " + boroughs.length + " borough zones -> " + OUT_BOROUGHS);
 const existingPrecise = readExisting<ZoneRecord>(OUT_PRECISE);
 const precise: ZoneRecord[] = [];
 for (const entry of BOROUGHS.filter((b) => b.portal?.cpz)) {
-  const fresh = await loadSocrataCpz(entry);
+  const fresh =
+    entry.portal!.kind === "arcgis"
+      ? await loadArcgisCpz(entry)
+      : entry.portal!.kind === "ishare"
+        ? await loadIshareCpz(entry)
+        : await loadSocrataCpz(entry);
   if (fresh) {
     precise.push(...fresh);
   } else {
@@ -74,6 +82,25 @@ precise.sort((a, b) => a.id.localeCompare(b.id));
 writeFileSync(OUT_PRECISE, JSON.stringify(precise) + "\n");
 console.log("wrote " + precise.length + " per-zone CPZs -> " + OUT_PRECISE);
 
+// Event-day CPZ rules (venue-triggered), captured for a FUTURE match-day
+// feature — NOT consumed by the engine yet (see docs/EVENT_DAYS.md). Read from
+// the iShare snapshots the precise pass just wrote; per-borough keep-on-skip.
+const existingEvents = readExisting<EventZoneRecord>(OUT_EVENTS);
+const events: EventZoneRecord[] = [];
+for (const entry of BOROUGHS.filter((b) => b.portal?.kind === "ishare" && b.portal.cpz)) {
+  const fresh = loadIshareEvents(entry);
+  if (fresh) {
+    events.push(...fresh);
+  } else {
+    const kept = existingEvents.filter((e) => e.zoneKey.startsWith(entry.zoneIdPrefix + "-"));
+    if (kept.length) console.log("[" + entry.zoneIdPrefix + "-events] kept " + kept.length + " committed event zones — source skipped");
+    events.push(...kept);
+  }
+}
+events.sort((a, b) => a.zoneKey.localeCompare(b.zoneKey));
+writeFileSync(OUT_EVENTS, JSON.stringify(events) + "\n");
+console.log("wrote " + events.length + " event-day zones -> " + OUT_EVENTS);
+
 // -- spots (spatial join against the freshest zone set, most precise first) --
 const joinZones: ZoneRecord[] = [...precise, ...boroughs];
 
@@ -81,7 +108,7 @@ const joinZones: ZoneRecord[] = [...precise, ...boroughs];
 // with the same per-borough keep-on-skip (matched by provenance suffix).
 const existingBays = readExisting<SpotRecord>(OUT_BAYS);
 const bays: SpotRecord[] = [];
-for (const entry of BOROUGHS.filter((b) => b.portal?.bays)) {
+for (const entry of BOROUGHS.filter((b) => b.portal?.kind === "socrata" && b.portal.bays)) {
   const fresh = await loadSocrataBays(entry, joinZones);
   if (fresh) {
     bays.push(...fresh);
