@@ -69,6 +69,18 @@ export interface ArcgisCpzPortal {
   zoneField?: string;
   ratePence: number;
   maxStayHours: number;
+  /**
+   * Some boroughs flag event-day zones with a status column rather than writing
+   * the extra hours into the schedule text (Newham: CPZ_Status = "Event Day
+   * Parking Zone" around the London Stadium). Those zones' published hours are
+   * their *regular* hours, so without this the engine would read a quiet
+   * Saturday as free and recommend parking there on a match day.
+   */
+  eventStatusField?: string;
+  /** Values of `eventStatusField` that mark an event-day zone. */
+  eventStatusMatch?: RegExp;
+  /** Venue whose fixtures trigger the control — the column names no venue. */
+  eventVenue?: string;
 }
 
 export interface ArcgisPortal {
@@ -397,6 +409,23 @@ export const BOROUGHS: BoroughEntry[] = [
       ratePence: 380,
       maxStayHours: 4,
     },
+    portal: {
+      kind: "arcgis",
+      cpz: {
+        // LB Newham CPZ layer (ArcGIS Online). NAME = zone name, TIMES = free-text
+        // hours ("10am - 12 Noon (Mon-Fri)"). CPZ_Status flags the five London
+        // Stadium event-day zones, whose published TIMES are regular hours only.
+        layerUrl:
+          "https://services1.arcgis.com/trOdpHvvP7HrTfdb/arcgis/rest/services/Controlled_Parking_Zones/FeatureServer/0",
+        hoursFields: ["TIMES"],
+        zoneField: "NAME",
+        ratePence: 380,
+        maxStayHours: 4,
+        eventStatusField: "CPZ_Status",
+        eventStatusMatch: /event\s*day/i,
+        eventVenue: "London Stadium",
+      },
+    },
   },
   {
     borough: "Brent",
@@ -580,6 +609,20 @@ export const BOROUGHS: BoroughEntry[] = [
       sched: [{ days: MF, from: "08:30", to: "18:30" }],
       ratePence: 320,
       maxStayHours: 4,
+    },
+    portal: {
+      kind: "arcgis",
+      cpz: {
+        // LB Merton "CPZ_Boundaries" (ArcGIS Online, layer 5 of the parking
+        // service). Zone_Label = "Zone 2F", Operation_Summary = "Mon-Sat 8:30am
+        // - 6:30pm" — one combined string the shared parser reads directly.
+        layerUrl:
+          "https://services-eu1.arcgis.com/lDzXrGJF6LKIhYUB/arcgis/rest/services/Controlled_Parking_Zone_Boundaries/FeatureServer/5",
+        hoursFields: ["Operation_Summary"],
+        zoneField: "Zone_Label",
+        ratePence: 320,
+        maxStayHours: 4,
+      },
     },
   },
   {

@@ -117,7 +117,12 @@ Best Overall, Best Free, Closest, Cheapest Paid.
    as GeoJSON, and parse control hours via the shared schedule parser. Wired:
    Kingston (RB Kingston INSPIRE CPZ, combined `TimeOfOperation` string → 28
    verified zones) and Hammersmith & Fulham (LBHF INSPIRE CPZ, separate
-   ZONE_/DAYS/TIME_ columns → 31 verified zones).
+   ZONE_/DAYS/TIME_ columns → 31 verified zones), plus Lambeth (20), Harrow (74),
+   **Merton** (`Zone_Label` + `Operation_Summary` → 72) and **Newham**
+   (`NAME` + `TIMES` → 30, incl. 5 London Stadium event zones).
+   `zoneLabel()` decides whether the zone column holds a code ("A", "2F" →
+   "Zone A"), an already-prefixed label (Merton "Zone 2F") or a place name
+   (Newham "Canning Town") — don't reintroduce a blanket "Zone " prefix.
 5. Astun **iShare** WFS CPZ import (done). `data/sources/ishareCpz.ts` +
    a `kind:"ishare"` portal fetch a borough's MapServer WFS (GML, native British
    National Grid), reproject EPSG:27700→WGS84 via `geo.osgb36ToWgs84`, and parse
@@ -125,12 +130,20 @@ Best Overall, Best Free, Closest, Cheapest Paid.
    iShare, `Controlled_Parking_Zones` layer → 43 verified per-zone CPZs). Only
    the regular (non-event) hours drive the engine: Tottenham-stadium "event day"
    clauses are stripped and event-day-only zones skipped (never present a zone as
-   always-controlled when it isn't — §7). `zones.precise.json` now carries
-   Camden + Kingston + H&F + Haringey (151 zones).
+   always-controlled when it isn't — §7). `zones.precise.json` carries **347
+   zones across 8 boroughs**: Harrow 74, Merton 72, Camden 49, Haringey 43,
+   H&F 31, Newham 30, Kingston 28, Lambeth 20. The other 25 boroughs still fall
+   back to borough-level indicative hours, which rule 9 refuses to use for
+   clearing a restriction — so widening this list directly widens rule 10.
 6. Event-day CPZ rules captured for a FUTURE match-day feature (done, data only —
    no connector). `transformIshareEvents` writes `zones.events.json` (15 Haringey
    zones: venue, event-day `sched`, `bankHoliday` window, `regularSched`, lossless
-   `rawOpTimes`, polygons). The engine does NOT consume it yet. Plan + record
-   shape in `docs/EVENT_DAYS.md`; parser in `data/sources/eventControl.ts`.
+   `rawOpTimes`, polygons). Plan + record shape in `docs/EVENT_DAYS.md`; parser in
+   `data/sources/eventControl.ts`. **The engine now consumes this** — see rule 12.
+   ArcGIS boroughs that flag event zones with a status column instead of hours
+   text (Newham `CPZ_Status`) declare `eventStatusField`/`eventStatusMatch`/
+   `eventVenue` in the registry; `transformArcgisEvents` emits matching records
+   whose `preciseZoneId` is guaranteed to equal the zone pass's id (both go
+   through the shared `groupZones`). 20 event zones: 15 Haringey + 5 Newham.
 7. Wire more borough portals; parsed tariff tables (COST columns); kerb-level
    bay data beyond Camden; build the match-day feed + engine hook (docs/EVENT_DAYS.md).

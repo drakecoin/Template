@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { GeoFeatureCollection } from "../geo.js";
-import { transformArcgisCpz, type ArcgisCpzSpec } from "../sources/arcgisCpz.js";
+import {
+  transformArcgisCpz,
+  transformArcgisEvents,
+  type ArcgisCpzSpec,
+} from "../sources/arcgisCpz.js";
 
 const square = (lat: number, lng: number, d: number) => [
   [
@@ -109,5 +113,77 @@ describe("transformArcgisCpz — Kingston (combined string)", () => {
       { days: [1, 2, 3, 4, 5, 6], from: "08:30", to: "18:30" },
       { days: [0], from: "11:00", to: "17:00" },
     ]);
+  });
+});
+
+// --- Newham shape: place-name zones + an event-day status column ------------
+// The layer publishes each zone's REGULAR hours and flags the London Stadium
+// zones separately, so a zone that looks free on a Saturday may be controlled
+// on a match day. Those must reach zones.events.json or the engine will badge
+// them "free" (engine §12).
+const NWM_SPEC: ArcgisCpzSpec = {
+  idPrefix: "nwm",
+  namePrefix: "Newham",
+  src: "https://www.newham.gov.uk/parking-roads-travel",
+  ratePence: 380,
+  maxStayHours: 4,
+  hoursFields: ["TIMES"],
+  zoneField: "NAME",
+  defaultSched: [{ days: [1, 2, 3, 4, 5], from: "08:00", to: "18:30" }],
+  eventStatusField: "CPZ_Status",
+  eventStatusMatch: /event\s*day/i,
+  eventVenue: "London Stadium",
+};
+
+const nwmFeature = (name: string, times: string, status: string, lat: number, lng: number) => ({
+  type: "Feature",
+  properties: { NAME: name, TIMES: times, CPZ_Status: status },
+  geometry: { type: "Polygon", coordinates: square(lat, lng, 0.01) },
+});
+
+const NWM_FIXTURE: GeoFeatureCollection = {
+  type: "FeatureCollection",
+  features: [
+    nwmFeature("Stratford SW", "10am - 12 Noon (Mon-Fri)", "Event Day Parking Zone", 51.53, 0.0),
+    nwmFeature("Ruskin", "9am - 5pm (Mon-Sat)", " ", 51.54, 0.01),
+  ],
+};
+
+describe("transformArcgisCpz — Newham (place-name zones)", () => {
+  const zones = transformArcgisCpz(NWM_FIXTURE, "2026-07-20", NWM_SPEC);
+
+  it("does not dress a place name up as a zone code", () => {
+    expect(zones.map((z) => z.name)).toEqual(["Newham Ruskin", "Newham Stratford SW"]);
+  });
+
+  it("still parses the published regular hours", () => {
+    const ruskin = zones.find((z) => z.id === "nwm-ruskin")!;
+    expect(ruskin.verified).toBe(true);
+    expect(ruskin.sched).toEqual([{ days: [1, 2, 3, 4, 5, 6], from: "09:00", to: "17:00" }]);
+  });
+});
+
+describe("transformArcgisEvents — status-column event zones", () => {
+  const events = transformArcgisEvents(NWM_FIXTURE, "2026-07-20", NWM_SPEC);
+
+  it("captures only the flagged zones", () => {
+    expect(events).toHaveLength(1);
+    expect(events[0].zoneKey).toBe("nwm-stratford-sw");
+    expect(events[0].event.venue).toBe("London Stadium");
+  });
+
+  it("links to the id the zone pass emits, so the engine can join them", () => {
+    const zones = transformArcgisCpz(NWM_FIXTURE, "2026-07-20", NWM_SPEC);
+    expect(zones.some((z) => z.id === events[0].preciseZoneId)).toBe(true);
+  });
+
+  it("keeps the published hours as REGULAR hours, with no invented event sched", () => {
+    expect(events[0].regularSched).toEqual([{ days: [1, 2, 3, 4, 5], from: "10:00", to: "12:00" }]);
+    expect(events[0].event.sched).toEqual([]);
+    expect(events[0].event.rawText).toContain("regular hours only");
+  });
+
+  it("emits nothing for a borough that declares no event column", () => {
+    expect(transformArcgisEvents(HF_FIXTURE, "2026-07-20", HF_SPEC)).toEqual([]);
   });
 });

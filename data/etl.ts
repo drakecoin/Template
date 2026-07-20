@@ -20,7 +20,7 @@ import { BOROUGHS } from "./registry.js";
 import { loadBoroughZones, type ZoneRecord } from "./sources/boroughs.js";
 import { loadMapillarySigns, type MapillarySpot } from "./sources/mapillary.js";
 import { loadOsmKerbs } from "./sources/osm.js";
-import { loadArcgisCpz } from "./sources/arcgisCpz.js";
+import { loadArcgisCpz, loadArcgisEvents } from "./sources/arcgisCpz.js";
 import { loadIshareCpz, loadIshareEvents, type EventZoneRecord } from "./sources/ishareCpz.js";
 import { loadSocrataBays, type SpotRecord } from "./sources/socrataBays.js";
 import { loadSocrataCpz } from "./sources/socrataCpz.js";
@@ -82,13 +82,20 @@ precise.sort((a, b) => a.id.localeCompare(b.id));
 writeFileSync(OUT_PRECISE, JSON.stringify(precise) + "\n");
 console.log("wrote " + precise.length + " per-zone CPZs -> " + OUT_PRECISE);
 
-// Event-day CPZ rules (venue-triggered), captured for a FUTURE match-day
-// feature — NOT consumed by the engine yet (see docs/EVENT_DAYS.md). Read from
-// the iShare snapshots the precise pass just wrote; per-borough keep-on-skip.
+// Event-day CPZ rules (venue-triggered). The engine DOES consume these now: a
+// zone whose regular hours are off is only free if there's no fixture, so these
+// records suppress the "park free here" badge (CLAUDE.md §12). Read from the
+// snapshots the precise pass just wrote; per-borough keep-on-skip.
 const existingEvents = readExisting<EventZoneRecord>(OUT_EVENTS);
 const events: EventZoneRecord[] = [];
-for (const entry of BOROUGHS.filter((b) => b.portal?.kind === "ishare" && b.portal.cpz)) {
-  const fresh = loadIshareEvents(entry);
+const eventBoroughs = BOROUGHS.filter(
+  (b) =>
+    (b.portal?.kind === "ishare" && b.portal.cpz) ||
+    (b.portal?.kind === "arcgis" && b.portal.cpz?.eventStatusField),
+);
+for (const entry of eventBoroughs) {
+  const fresh =
+    entry.portal!.kind === "arcgis" ? loadArcgisEvents(entry) : loadIshareEvents(entry);
   if (fresh) {
     events.push(...fresh);
   } else {

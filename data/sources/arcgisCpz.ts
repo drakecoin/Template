@@ -5,6 +5,7 @@ import { outerRings, toLatLngRing, type GeoFeatureCollection } from "../geo.js";
 import type { ArcgisPortal, BoroughEntry, CpzHours } from "../registry.js";
 import { parseScheduleText } from "../schedule.js";
 import type { ZoneRecord } from "./boroughs.js";
+import type { EventZoneRecord } from "./ishareCpz.js";
 
 /**
  * Generic per-zone CPZ importer for London boroughs that publish their CPZ layer
@@ -39,6 +40,9 @@ export interface ArcgisCpzSpec {
   hoursFields: string[];
   zoneField?: string;
   defaultSched: CpzHours[];
+  eventStatusField?: string;
+  eventStatusMatch?: RegExp;
+  eventVenue?: string;
 }
 
 function specFor(entry: BoroughEntry): ArcgisCpzSpec | null {
@@ -57,6 +61,9 @@ function specFor(entry: BoroughEntry): ArcgisCpzSpec | null {
     hoursFields: cpz.hoursFields,
     zoneField: cpz.zoneField,
     defaultSched,
+    eventStatusField: cpz.eventStatusField,
+    eventStatusMatch: cpz.eventStatusMatch,
+    eventVenue: cpz.eventVenue,
   };
 }
 
@@ -84,23 +91,39 @@ function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
+/**
+ * Display label for a zone. Boroughs put different things in the zone column:
+ * a bare code ("A", "A1", "A/A1", "2F") that reads better as "Zone A"; a label
+ * that already says "Zone 2F" (Merton) which must not become "Zone Zone 2F";
+ * or a place name ("Beckton", "Canning Town North" — Newham) that isn't a code
+ * at all and shouldn't be dressed up as one.
+ */
+function zoneLabel(code: string, area?: string): string {
+  const isCode = /^[a-z0-9/]{1,5}$/i.test(code) && !/^zone$/i.test(code);
+  const head = isCode ? "Zone " + code : code;
+  return area ? head + " " + area : head;
+}
+
 interface ZoneGroup {
   code: string;
   area?: string;
   hoursText: string;
+  /** Raw value of the borough's event-status column, when it declares one. */
+  eventStatus?: string;
   rings: number[][][];
 }
 
-/** Pure transform: an ArcGIS CPZ FeatureCollection -> normalised zone records. */
-export function transformArcgisCpz(
+/**
+ * Group raw features into zones and assign each a stable id. Shared by the
+ * zone and event transforms so an event record's `preciseZoneId` is guaranteed
+ * to match the id the zone pass emits.
+ */
+function groupZones(
   fc: GeoFeatureCollection,
-  checkedAt: string,
   spec: ArcgisCpzSpec,
-): ZoneRecord[] {
-  if (!fc.features?.length) return [];
-
+): { id: string; group: ZoneGroup }[] {
   const groups = new Map<string, ZoneGroup>();
-  for (const f of fc.features) {
+  for (const f of fc.features ?? []) {
     const props = f.properties;
     const rawText = spec.hoursFields
       .map((k) => String(props[k] ?? "").trim())
@@ -111,25 +134,45 @@ export function transformArcgisCpz(
       : extractZoneCode(rawText);
     if (!code) continue;
     const area = spec.zoneField ? undefined : extractZoneArea(rawText);
+    const eventStatus = spec.eventStatusField
+      ? String(props[spec.eventStatusField] ?? "").trim() || undefined
+      : undefined;
     // Group so that distinct hour/area variants of a code stay separate
     // (Kingston Zone S central vs outer differ), but identical rows merge.
     const key = spec.zoneField ? code : rawText;
-    const group = groups.get(key) ?? { code, area, hoursText: rawText, rings: [] };
+    const group =
+      groups.get(key) ?? { code, area, hoursText: rawText, eventStatus, rings: [] };
+    // One flagged row is enough to mark the whole zone.
+    if (eventStatus && !group.eventStatus) group.eventStatus = eventStatus;
     for (const ring of outerRings(f)) group.rings.push(toLatLngRing(ring, TOLERANCE));
     groups.set(key, group);
   }
 
-  const zones: ZoneRecord[] = [];
+  const out: { id: string; group: ZoneGroup }[] = [];
   const usedIds = new Set<string>();
   for (const g of groups.values()) {
     if (!g.rings.length) continue;
-    const parsed = parseScheduleText(cleanHoursText(g.hoursText));
-    const base =
-      spec.idPrefix + "-" + slug(g.code) + (g.area ? "-" + slug(g.area) : "");
+    const base = spec.idPrefix + "-" + slug(g.code) + (g.area ? "-" + slug(g.area) : "");
     let id = base;
     for (let n = 2; usedIds.has(id); n++) id = base + "-" + n;
     usedIds.add(id);
-    const label = g.area ? "Zone " + g.code + " " + g.area : "Zone " + g.code;
+    out.push({ id, group: g });
+  }
+  return out;
+}
+
+/** Pure transform: an ArcGIS CPZ FeatureCollection -> normalised zone records. */
+export function transformArcgisCpz(
+  fc: GeoFeatureCollection,
+  checkedAt: string,
+  spec: ArcgisCpzSpec,
+): ZoneRecord[] {
+  if (!fc.features?.length) return [];
+
+  const zones: ZoneRecord[] = [];
+  for (const { id, group: g } of groupZones(fc, spec)) {
+    const parsed = parseScheduleText(cleanHoursText(g.hoursText));
+    const label = zoneLabel(g.code, g.area);
     zones.push({
       id,
       name: spec.namePrefix + " " + label,
@@ -146,6 +189,54 @@ export function transformArcgisCpz(
   }
   zones.sort((a, b) => a.id.localeCompare(b.id));
   return zones;
+}
+
+/**
+ * Pure transform: event-day zone records for boroughs that flag them with a
+ * status column. The layer publishes only the zone's *regular* hours, so the
+ * event `sched` is empty — presence of the record is the signal the engine
+ * needs, and `rawText` keeps the borough's own wording.
+ */
+export function transformArcgisEvents(
+  fc: GeoFeatureCollection,
+  checkedAt: string,
+  spec: ArcgisCpzSpec,
+): EventZoneRecord[] {
+  if (!spec.eventStatusField || !spec.eventStatusMatch) return [];
+  const match = spec.eventStatusMatch;
+  const records: EventZoneRecord[] = [];
+  for (const { id, group: g } of groupZones(fc, spec)) {
+    if (!g.eventStatus || !match.test(g.eventStatus)) continue;
+    const label = zoneLabel(g.code, g.area);
+    records.push({
+      zoneKey: id,
+      name: label,
+      borough: spec.namePrefix,
+      // These zones keep everyday control too, so they stay in zones.precise.
+      preciseZoneId: id,
+      eventOnly: false,
+      regularSched: parseScheduleText(cleanHoursText(g.hoursText)) ?? null,
+      event: {
+        venue: spec.eventVenue ?? null,
+        // The status column states no hours — only that event days extend control.
+        sched: [],
+        bankHoliday: null,
+        rawText:
+          g.eventStatus +
+          (spec.eventVenue ? " (" + spec.eventVenue + ")" : "") +
+          " — extra controls apply on event days; hours published as " +
+          JSON.stringify(g.hoursText) + " are the regular hours only",
+      },
+      rawOpTimes: g.hoursText,
+      ratePence: spec.ratePence,
+      maxStayHours: spec.maxStayHours,
+      src: spec.src,
+      checkedAt,
+      polys: g.rings,
+    });
+  }
+  records.sort((a, b) => a.zoneKey.localeCompare(b.zoneKey));
+  return records;
 }
 
 function snapshotPath(entry: BoroughEntry): string {
@@ -178,7 +269,9 @@ async function fetchLive(entry: BoroughEntry): Promise<GeoFeatureCollection> {
   const portal = entry.portal as ArcgisPortal;
   const cpz = portal.cpz!;
   const label = entry.zoneIdPrefix;
-  const fields = [cpz.zoneField, ...cpz.hoursFields].filter(Boolean).join(",");
+  const fields = [cpz.zoneField, ...cpz.hoursFields, cpz.eventStatusField]
+    .filter(Boolean)
+    .join(",");
   const base = cpz.layerUrl.replace(/\/+$/, "") + "/query";
   const enc = encodeURIComponent(fields);
 
@@ -235,4 +328,20 @@ export async function loadArcgisCpz(entry: BoroughEntry): Promise<ZoneRecord[] |
   const zones = transformArcgisCpz(fc, new Date().toISOString().slice(0, 10), spec);
   console.log("[" + label + "] " + zones.length + " per-zone CPZs (arcgis)");
   return zones;
+}
+
+/**
+ * Event-day zones for one ArcGIS borough, read from the snapshot the precise
+ * pass just wrote (same pattern as loadIshareEvents). Null when the borough
+ * declares no event-status column or has no snapshot yet.
+ */
+export function loadArcgisEvents(entry: BoroughEntry): EventZoneRecord[] | null {
+  const spec = specFor(entry);
+  if (!spec?.eventStatusField) return null;
+  const snapshot = snapshotPath(entry);
+  if (!existsSync(snapshot)) return null;
+  const fc = JSON.parse(readFileSync(snapshot, "utf8")) as GeoFeatureCollection;
+  const events = transformArcgisEvents(fc, new Date().toISOString().slice(0, 10), spec);
+  console.log("[" + entry.zoneIdPrefix + "] " + events.length + " event-day zones captured (arcgis)");
+  return events;
 }
