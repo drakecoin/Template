@@ -399,6 +399,55 @@ describe("destination streets (zone lookup by polygon)", () => {
     });
   });
 
+  describe("Mapillary parking-sign observations (non-virtual cpzStreet)", () => {
+    const zone = {
+      id: "z-sign",
+      name: "Sign Test Zone",
+      kind: "cpz" as const,
+      verified: true,
+      src: "https://example.gov.uk",
+      sched: [{ days: [1, 2, 3, 4, 5], from: "10:00", to: "12:00" }],
+      ratePence: 420,
+      maxStayHours: 2,
+      polys: [[[51.50, -0.11], [51.52, -0.11], [51.52, -0.09], [51.50, -0.09], [51.50, -0.11]] as [number, number][]],
+    };
+    // A detected parking sign, exactly as the Mapillary importer emits it.
+    const sign = {
+      n: "Parking sign (check bay type) · seen 2026-01",
+      type: "cpzStreet" as const,
+      zone: "z-sign",
+      lat: 51.51,
+      lng: -0.1,
+      note: "Parking-place sign seen here (Mapillary, 2026-01-17) — check the plate",
+    };
+    const HERE = { lat: 51.51, lng: -0.1 };
+
+    it("is a priced-nothing advisory during controlled hours, never a payable bay", () => {
+      const res = evaluate(HERE, d(13, 10, 30), d(13, 11, 30), { zones: [zone], spots: [sign] });
+      const r = byName(res, sign.n);
+      expect(r.valid).toBe(false);
+      expect(r.typeLabel).not.toBe("Paid bay");
+      expect(r.costPence).toBe(0);
+      expect(r.note).toContain("Mapillary");
+    });
+
+    it("is free when the zone is off, but never wins a badge — a sign isn't a confirmed bay", () => {
+      const res = evaluate(HERE, d(19, 10), d(19, 12), { zones: [zone], spots: [sign] });
+      const r = byName(res, sign.n);
+      expect(r.valid).toBe(true);
+      expect(r.costPence).toBe(0);
+      expect(r.badges).toEqual([]);
+    });
+
+    it("does not out-rank the destination street for the badges", () => {
+      const res = evaluate(HERE, d(19, 10), d(19, 12), { zones: [zone], spots: [sign] }, {
+        destinationStreets: true,
+      });
+      const best = res.find((r) => r.badges.includes("best"));
+      expect(best?.spot.n).toBe("Streets at your destination");
+    });
+  });
+
   describe("area-wide hours never clear a specific kerb", () => {
     const boroughZone = BOROUGH_ZONES.find((z) => z.id === "boro-islington")!;
     const resBay = {

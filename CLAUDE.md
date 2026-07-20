@@ -79,6 +79,13 @@ Best Overall, Best Free, Closest, Cheapest Paid.
 13. `nearestPointInZone` returns undefined for a zone with no rings. The curated
    `ZONES` carry hours but no geometry; answering `pt` for them claimed the zone
    reached wherever the user stood, offering Islington streets to Tottenham.
+14. **A Mapillary sign detection is a sign class + position, never the plate.**
+   It can't read pay-vs-permit, hours or tariff, so a parking-place sign is a
+   `cpzStreet` observation (non-virtual), NOT a priced `paid` bay — governed by
+   its containing zone's hours, greyed during control, free-with-caveat when off.
+   `assignBadges` excludes non-virtual `cpzStreet` from every badge: a detected
+   sign marks that regulated parking exists, not that a usable free bay is
+   confirmed, so it must never out-rank the destination or a real bay record.
 
 ## Conventions
 - TypeScript strict. No `any` in the engine.

@@ -511,7 +511,9 @@ export function evaluate(
       }
     }
 
-    if (spot.virtual) r.note += " · " + spot.note;
+    // Surface the spot's own provenance for synthesised options and for
+    // Mapillary sign observations (which carry the detection date + caveat).
+    if (spot.virtual || spot.type === "cpzStreet") r.note += " · " + spot.note;
     r.score = r.valid ? r.costPence + r.walkMin * WALK_PENALTY_PENCE_PER_MIN : Infinity;
     out.push(r);
   }
@@ -528,10 +530,17 @@ function addBadge(r: EvaluatedOption, badge: Badge): void {
 }
 
 function assignBadges(out: EvaluatedOption[]): void {
-  // An option whose freeness hinges on there being no event today never gets a
-  // badge: a green "Recommended" reads as an endorsement and would out-shout
-  // the caveat next to it. It still appears in the list, warning attached.
-  const valid = out.filter((r) => r.valid && !(r.eventRisk && r.costPence === 0));
+  // Two kinds of free option never get a badge, though both still appear:
+  //  - one whose freeness hinges on there being no event today (eventRisk) — a
+  //    green "Recommended" would out-shout the caveat beside it;
+  //  - a Mapillary parking-sign observation (non-virtual cpzStreet) — it marks
+  //    that regulated parking exists, not that a usable free bay is confirmed,
+  //    so it shouldn't be promoted over the destination or a real bay.
+  const badgeable = (r: EvaluatedOption): boolean =>
+    r.valid &&
+    !(r.eventRisk && r.costPence === 0) &&
+    !(r.spot.type === "cpzStreet" && !r.spot.virtual);
+  const valid = out.filter(badgeable);
   valid.sort((a, b) => a.score - b.score);
   if (!valid.length) return;
   addBadge(valid[0], "best");

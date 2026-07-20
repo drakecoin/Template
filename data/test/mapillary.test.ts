@@ -12,9 +12,11 @@ describe("mapillary sign mapping", () => {
     expect(signToSpotType("regulatory--no-loading--g1")?.type).toBe("noLoad");
   });
 
-  it("maps parking / CPZ signs to a paid bay", () => {
-    expect(signToSpotType("information--parking--g1")?.type).toBe("paid");
-    expect(signToSpotType("information--parking--g5")?.type).toBe("paid");
+  it("maps parking / CPZ signs to a cpzStreet advisory, not a priced bay", () => {
+    // A sign detection reads the sign class, never the plate beneath, so it
+    // can't confirm a payable bay (vs resident-only) — engine rule 8.
+    expect(signToSpotType("information--parking--g1")?.type).toBe("cpzStreet");
+    expect(signToSpotType("information--parking--g5")?.type).toBe("cpzStreet");
   });
 
   it("never maps a no-parking sign to a parkable bay", () => {
@@ -92,7 +94,7 @@ describe("mapillary buildSpots (dedupe + newest-wins)", () => {
   it("joins a parking sign to its containing zone", () => {
     const spots = buildSpots([feat("information--parking--g1", -0.14, 51.53, JUN_2025)], [ZONE]);
     expect(spots).toHaveLength(1);
-    expect(spots[0].type).toBe("paid");
+    expect(spots[0].type).toBe("cpzStreet");
     expect(spots[0].zone).toBe("z-test");
   });
 

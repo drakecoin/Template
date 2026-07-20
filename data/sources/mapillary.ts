@@ -53,11 +53,17 @@ const RAW_SNAPSHOT = join(here, "..", "raw", "mapillary_signs.json");
 /** Engine-ready spot derived from a detected sign. */
 export interface MapillarySpot {
   n: string;
-  /** noStop/noLoad are restriction areas; paid is a CPZ/parking bay priced by its zone. */
-  type: "noStop" | "noLoad" | "paid";
+  /**
+   * noStop/noLoad are restriction areas. `cpzStreet` is a parking-place sign:
+   * we know regulated parking exists at this point, but a sign detection reads
+   * only the sign *class*, never the plate beneath it — so we can't tell a pay
+   * bay from a resident bay, nor its hours or tariff. The engine treats it as
+   * an advisory governed by the containing zone's hours, never a priced bay.
+   */
+  type: "noStop" | "noLoad" | "cpzStreet";
   lat: number;
   lng: number;
-  /** Zone id for a parking sign, so the engine prices it by that zone's hours. */
+  /** Zone id for a parking sign, so the engine reads that zone's hours. */
   zone?: string;
   /** Capture date of the most recent detection (YYYY-MM-DD). */
   date: string;
@@ -73,21 +79,25 @@ interface RawFeature {
 
 /**
  * Map a Mapillary traffic-sign class onto a spot type.
- *  - no-loading            -> noLoad (advisory)
- *  - no-stopping/clearway  -> noStop (never parkable)
- *  - CPZ / parking place   -> paid   (a bay, priced by its containing zone)
+ *  - no-loading            -> noLoad     (advisory)
+ *  - no-stopping/clearway  -> noStop     (never parkable)
+ *  - CPZ / parking place   -> cpzStreet  (regulated parking here; bay type unknown)
  *
  * Order matters for safety: restrictions and "no-parking" are matched BEFORE the
  * generic "parking" rule, so a no-parking sign is never turned into a parkable
- * bay (that would be a £130-PCN error). "no-parking" itself is skipped — we only
- * assert bays where the sign says parking is permitted.
+ * spot (that would be a £130-PCN error). "no-parking" itself is skipped — we
+ * only surface a spot where the sign says parking is permitted.
+ *
+ * A parking-place sign is deliberately NOT a priced bay: the detection reads the
+ * sign class only, not the plate that states pay-vs-permit, hours and tariff, so
+ * pricing one would invent a bay we can't confirm (see engine rule 8).
  */
 export function signToSpotType(objectValue: string): { type: MapillarySpot["type"]; label: string } | null {
   const v = objectValue.toLowerCase();
   if (/no-loading/.test(v)) return { type: "noLoad", label: "No loading" };
   if (/no-stopping|clearway/.test(v)) return { type: "noStop", label: "No stopping" };
   if (/no-parking|end-of-parking/.test(v)) return null; // "no parking" / "zone ends" — not a bay
-  if (/information--parking/.test(v)) return { type: "paid", label: "Parking" }; // blue "P" parking place
+  if (/information--parking/.test(v)) return { type: "cpzStreet", label: "Parking" }; // blue "P" parking place
   return null; // other parking-* signs (e.g. parking-restrictions) are ambiguous — skip
 }
 
@@ -254,9 +264,9 @@ export function buildSpots(features: RawFeature[], zones: ZoneRecord[] = []): Ma
     const [lng, lat] = coords;
 
     let zone: string | undefined;
-    if (mapped.type === "paid") {
+    if (mapped.type === "cpzStreet") {
       const z = zones.find((zz) => pointInRings(lat, lng, zz.polys));
-      if (!z) continue; // can't price a bay with no containing zone — skip
+      if (!z) continue; // no containing zone -> no hours to govern it — skip
       zone = z.id;
     }
 
@@ -267,15 +277,16 @@ export function buildSpots(features: RawFeature[], zones: ZoneRecord[] = []): Ma
 
     const seen = at ? " · seen " + at.slice(0, 7) : "";
     kept.push({
-      n: mapped.type === "paid" ? "Parking sign (check bay type)" + seen : mapped.label + (at ? " · sign seen " + at.slice(0, 7) : ""),
+      n: mapped.type === "cpzStreet" ? "Parking sign (check bay type)" + seen : mapped.label + (at ? " · sign seen " + at.slice(0, 7) : ""),
       type: mapped.type,
       lat,
       lng,
       zone,
       date: at,
       note:
-        mapped.type === "paid"
-          ? "CPZ/parking sign via Mapillary" + (at ? ", " + at : "") + " — verify bay type & hours on the street"
+        mapped.type === "cpzStreet"
+          ? "Parking-place sign seen here (Mapillary" + (at ? ", " + at : "") +
+            ") — the plate states the bay type, hours & tariff; we can't read it, so check on the street"
           : "Detected street sign (" + f.object_value + ") via Mapillary" + (at ? ", " + at : ""),
     });
   }
@@ -308,10 +319,10 @@ export async function loadMapillarySigns(zones: ZoneRecord[] = []): Promise<Mapi
   if (!features) return null;
 
   const spots = buildSpots(features, zones);
-  const paid = spots.filter((s) => s.type === "paid").length;
+  const parking = spots.filter((s) => s.type === "cpzStreet").length;
   console.log(
-    "[mapillary] " + spots.length + " spots after dedupe (" + paid + " parking, " +
-      (spots.length - paid) + " no-stopping/loading)",
+    "[mapillary] " + spots.length + " spots after dedupe (" + parking + " parking, " +
+      (spots.length - parking) + " no-stopping/loading)",
   );
   return spots;
 }
