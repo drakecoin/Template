@@ -49,6 +49,24 @@ export function fmtDT(d: Date): string {
   );
 }
 
+/**
+ * Distance (metres) within which an option counts as being at the destination
+ * rather than a walk away.
+ */
+export const AT_LOCATION_M = 50;
+
+/**
+ * Walk text for an option. `walkMinutes` floors at 1, so an option on the
+ * destination itself reads "1 min walk" — which is wrong and, on the street
+ * you are already standing on, faintly absurd. Those read "At location".
+ * `withKm` adds the distance, which the map popup has no room for.
+ */
+export function fmtWalk(km: number, walkMin: number, withKm = true): string {
+  if (km * 1000 <= AT_LOCATION_M) return "At location";
+  const walk = walkMin + " min walk";
+  return withKm ? walk + " · " + Math.round(km * 100) / 100 + " km" : walk;
+}
+
 export function gmapsLink(lat: number, lng: number): string {
   return (
     "https://www.google.com/maps/dir/?api=1&destination=" + lat + "," + lng + "&travelmode=driving"

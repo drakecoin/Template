@@ -11,7 +11,7 @@ import {
   type Zone,
 } from "@kerbside/engine";
 import { useEffect, useRef, useState } from "react";
-import { fmtDT, gmapsLink } from "../time";
+import { fmtDT, fmtWalk, gmapsLink } from "../time";
 import { UpdateDialog } from "./UpdateDialog";
 
 type SheetState = "normal" | "peek" | "tall";
@@ -35,13 +35,18 @@ const ICONS: Record<Spot["type"], [string, string]> = {
   res: ["R", "res"],
   yellow: ["F", "free"],
   freeSt: ["F", "free"],
+  cpzStreet: ["Z", "res"],
   noStop: ["⊘", "nostop"],
   noLoad: ["L", "noload"],
 };
 
-/** Glyph + class for a card. Paid bays free during the window drop the "£". */
+/**
+ * Glyph + class for a card. Paid bays free during the window drop the "£", and
+ * a CPZ street whose zone is off for the window is free parking.
+ */
 function iconFor(r: EvaluatedOption): [string, string] {
   if (r.spot.type === "paid" && r.valid && r.costPence === 0) return ["✓", "free"];
+  if (r.spot.type === "cpzStreet" && r.valid) return ["F", "free"];
   return ICONS[r.spot.type];
 }
 
@@ -103,11 +108,9 @@ function Card({
             {r.valid ? fmtCost(r.costPence) : "—"}
           </div>
         </div>
-        <div className="c-meta">
-          {r.walkMin} min walk · {Math.round(r.km * 100) / 100} km
-        </div>
+        <div className="c-meta">{fmtWalk(r.km, r.walkMin)}</div>
         <div className={"c-note" + (r.valid ? "" : " bad")}>{r.note}</div>
-        {r.warn && <div className="c-note warn">{r.warn}</div>}
+        {r.warn && <div className={"c-note " + (r.eventRisk ? "evt" : "warn")}>{r.warn}</div>}
         <a
           className="gm-link"
           href={gmapsLink(r.spot.lat, r.spot.lng)}
@@ -171,9 +174,17 @@ export function ResultsSheet({
 
   const valid = results?.filter((r) => r.valid) ?? [];
   const na = results?.filter((r) => !r.valid) ?? [];
-  const topPicks = TOP_SLOTS
-    .map((s) => ({ ...s, r: valid.find((r) => r.badges.includes(s.badge)) }))
-    .filter((s): s is typeof s & { r: EvaluatedOption } => s.r !== undefined);
+  // One card per winning option, not per slot: when the same option sweeps
+  // several slots — common when the nearest option is also the free one — it
+  // gets a single card carrying all the labels it won.
+  const topPicks: { labels: string[]; r: EvaluatedOption }[] = [];
+  for (const slot of TOP_SLOTS) {
+    const r = valid.find((v) => v.badges.includes(slot.badge));
+    if (!r) continue;
+    const seen = topPicks.find((p) => p.r === r);
+    if (seen) seen.labels.push(slot.label);
+    else topPicks.push({ labels: [slot.label], r });
+  }
 
   return (
     <div
@@ -249,18 +260,21 @@ export function ResultsSheet({
           <>
             {topPicks.length > 0 && (
               <>
-                {topPicks.map(({ badge, label, r }) => (
-                  <div className="top-slot" key={badge}>
-                    <div className="slot-label">{label}</div>
-                    <Card
-                      r={r}
-                      idx={results.indexOf(r)}
-                      selected={selectedIdx === results.indexOf(r)}
-                      canScroll={false}
-                      onSelect={onSelectCard}
-                    />
-                  </div>
-                ))}
+                {topPicks.map(({ labels, r }) => {
+                  const idx = results.indexOf(r);
+                  return (
+                    <div className="top-slot" key={idx}>
+                      <div className="slot-label">{labels.join(" · ")}</div>
+                      <Card
+                        r={r}
+                        idx={idx}
+                        selected={selectedIdx === idx}
+                        canScroll={false}
+                        onSelect={onSelectCard}
+                      />
+                    </div>
+                  );
+                })}
                 <div className="sec-label">All options</div>
               </>
             )}

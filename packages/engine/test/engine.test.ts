@@ -1,14 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
+  ALL_ZONES,
   BOROUGH_ZONES,
   carParkCost,
   controlledOverlapMin,
   evaluate,
+  EVENT_CONTROLS,
+  nearestPointInZone,
+  offZoneStreetSpots,
   SPOTS,
   zoneAt,
   zoneRings,
   ZONES,
   type EvaluatedOption,
+  type EventControl,
 } from "../src/index.js";
 
 // SPEC §6 engine scenarios. Fixed week in July 2026:
@@ -190,15 +195,20 @@ describe("destination streets (zone lookup by polygon)", () => {
     expect(top.badges).toContain("best");
   });
 
-  it("N1 2RE Saturday morning: destination street is a paid option at the zone rate, hours in the note", () => {
+  it("N1 2RE Saturday morning: an active zone yields an advisory, never an invented priced bay", () => {
     const res = evaluate(N1_2RE, d(18, 9), d(18, 11), BOROUGH_DATASET, {
       destinationStreets: true,
     });
     const street = byName(res, "Streets at your destination");
-    expect(street.valid).toBe(true);
-    expect(street.costPence).toBe(1300); // £6.50/h × 2h of Sat 08:30–13:30 control
+    // A zone polygon means "controlled area", not "there is a payable bay on
+    // this street" — pricing one from the polygon invents a bay that may not
+    // exist and hides that the kerb could be resident-only.
+    expect(street.spot.type).toBe("cpzStreet");
+    expect(street.valid).toBe(false);
+    expect(street.costPence).toBe(0);
+    expect(street.badges).toEqual([]);
     expect(street.note).toContain("Sat 08:30–13:30");
-    expect(street.note).toContain("check signage");
+    expect(street.note).toContain("no kerb-level bay data");
   });
 
   it("outside every zone the destination street is free with a data caveat", () => {
@@ -210,6 +220,214 @@ describe("destination streets (zone lookup by polygon)", () => {
     expect(street.valid).toBe(true);
     expect(street.costPence).toBe(0);
     expect(street.note).toContain("No controls in our dataset");
+  });
+
+  // Reported: N6 5TS, Mon 10:15–12:15. The containing zone was controlled, but
+  // a zone two minutes' walk away was NOT — and the app never offered it,
+  // because nothing curated sits inside it. It instead offered a car park and
+  // an invented "paid bay" on the destination street.
+  describe("nearby zones that are off during the stay", () => {
+    const CONTROLLED = {
+      id: "z-here",
+      name: "Test Zone Here",
+      kind: "cpz" as const,
+      verified: true,
+      src: "https://example.gov.uk/cpz",
+      sched: [{ days: [1, 2, 3, 4, 5], from: "10:00", to: "12:00" }],
+      ratePence: 420,
+      maxStayHours: 2,
+      // a box around (51.5720, -0.1450)
+      polys: [[[51.570, -0.147], [51.574, -0.147], [51.574, -0.143], [51.570, -0.143], [51.570, -0.147]] as [number, number][]],
+    };
+    // Directly east, sharing the -0.143 edge; controlled in the afternoon only.
+    const OFF_PEAK = {
+      ...CONTROLLED,
+      id: "z-next",
+      name: "Test Zone Next",
+      sched: [{ days: [1, 2, 3, 4, 5], from: "14:00", to: "16:00" }],
+      polys: [[[51.570, -0.143], [51.574, -0.143], [51.574, -0.139], [51.570, -0.139], [51.570, -0.143]] as [number, number][]],
+    };
+    const HERE = { lat: 51.572, lng: -0.1455 };
+    const DATASET = { zones: [CONTROLLED, OFF_PEAK], spots: SPOTS };
+
+    it("offers the closest point in the uncontrolled zone as free parking", () => {
+      const res = evaluate(HERE, d(13, 10, 15), d(13, 12, 15), DATASET, {
+        destinationStreets: true,
+      });
+      const next = byName(res, "Test Zone Next — nearest street");
+      expect(next.valid).toBe(true);
+      expect(next.costPence).toBe(0);
+      expect(next.note).toContain("isn't controlled during your times");
+      // and it really is the closest point in that zone, not its centroid
+      expect(next.km).toBeLessThan(0.35);
+      expect(zoneAt({ lat: next.spot.lat, lng: next.spot.lng }, [CONTROLLED, OFF_PEAK])?.id)
+        .toBe("z-next");
+    });
+
+    it("beats the controlled destination street, which is not parkable", () => {
+      const res = evaluate(HERE, d(13, 10, 15), d(13, 12, 15), DATASET, {
+        destinationStreets: true,
+      });
+      expect(byName(res, "Streets at your destination").valid).toBe(false);
+      const free = res.find((r) => r.badges.includes("free"));
+      expect(free?.spot.n).toBe("Test Zone Next — nearest street");
+    });
+
+    it("does not offer a zone that is controlled during the stay", () => {
+      const res = evaluate(HERE, d(13, 14, 15), d(13, 15, 15), DATASET, {
+        destinationStreets: true,
+      });
+      expect(res.find((r) => r.spot.n === "Test Zone Next — nearest street")).toBeUndefined();
+    });
+
+    it("never offers a zone with no boundary geometry", () => {
+      // The curated ZONES carry hours but no rings. Without a guard, the
+      // nearest-point fallback answers the destination itself, so an Islington
+      // zone gets offered as "nearest street" to someone standing in Tottenham.
+      const ringless = { ...OFF_PEAK, id: "z-ringless", name: "Ringless Zone", polys: undefined };
+      const res = evaluate(HERE, d(13, 10, 15), d(13, 12, 15), {
+        zones: [CONTROLLED, ringless],
+        spots: SPOTS,
+      }, { destinationStreets: true });
+      expect(res.find((r) => r.spot.n.startsWith("Ringless Zone"))).toBeUndefined();
+      expect(nearestPointInZone(HERE, ringless)).toBeUndefined();
+    });
+
+    it("never offers borough-level or unverified zones — those hours are guesses", () => {
+      const indicative = { ...OFF_PEAK, id: "b-next", name: "Borough Next", kind: "borough" as const };
+      const res = evaluate(HERE, d(13, 10, 15), d(13, 12, 15), {
+        zones: [CONTROLLED, indicative],
+        spots: SPOTS,
+      }, { destinationStreets: true });
+      expect(res.find((r) => r.spot.n === "Borough Next — nearest street")).toBeUndefined();
+    });
+  });
+
+  // The ETL strips event-day clauses out of zone `sched` so a match-day-only
+  // zone is never shown as always-controlled. The cost of that trade: a zero
+  // overlap means "off on regular hours", NOT "off today". Recommending such a
+  // zone as free is a PCN on a fixture day.
+  describe("event-day controls", () => {
+    const OFF_TODAY = {
+      id: "z-spurs",
+      name: "Tottenham North",
+      kind: "cpz" as const,
+      verified: true,
+      src: "https://haringey.gov.uk/parking",
+      sched: [{ days: [1, 2, 3, 4, 5], from: "08:00", to: "18:30" }], // weekdays only
+      ratePence: 420,
+      maxStayHours: 4,
+      polys: [[[51.570, -0.075], [51.574, -0.075], [51.574, -0.071], [51.570, -0.071], [51.570, -0.075]] as [number, number][]],
+    };
+    const EVENT: EventControl = {
+      zoneId: "z-spurs",
+      name: "Tottenham North",
+      venue: "Tottenham Hotspur Stadium",
+      sched: [{ days: [0, 6], from: "08:00", to: "20:00" }],
+      rawText: "on event days: 8am - 8pm",
+    };
+    const bay = {
+      n: "Test street bay",
+      type: "res" as const,
+      zone: "z-spurs",
+      lat: 51.572,
+      lng: -0.073,
+      note: "resident bays",
+    };
+    const HERE = { lat: 51.572, lng: -0.073 };
+    // Sunday — the zone's regular hours don't run, so the engine sees it as off.
+    const SUNDAY: [Date, Date] = [d(19, 10), d(19, 12)];
+
+    it("warns that a free option is only free when there's no event", () => {
+      const res = evaluate(HERE, ...SUNDAY, {
+        zones: [OFF_TODAY], spots: [bay], events: [EVENT],
+      });
+      const r = byName(res, "Test street bay");
+      expect(r.valid).toBe(true);
+      expect(r.costPence).toBe(0);
+      expect(r.eventRisk?.venue).toBe("Tottenham Hotspur Stadium");
+      expect(r.warn).toContain("Tottenham Hotspur Stadium");
+      expect(r.warn).toContain("event days");
+    });
+
+    it("never badges a free option whose freeness depends on there being no event", () => {
+      const res = evaluate(HERE, ...SUNDAY, {
+        zones: [OFF_TODAY], spots: [bay], events: [EVENT],
+      });
+      expect(byName(res, "Test street bay").badges).toEqual([]);
+    });
+
+    it("badges it normally once the event control is gone", () => {
+      const res = evaluate(HERE, ...SUNDAY, { zones: [OFF_TODAY], spots: [bay] });
+      const r = byName(res, "Test street bay");
+      expect(r.eventRisk).toBeUndefined();
+      expect(r.badges.length).toBeGreaterThan(0);
+    });
+
+    it("covers the synthesised off-zone suggestion too — the path that created this risk", () => {
+      const res = evaluate({ lat: 51.572, lng: -0.0762 }, ...SUNDAY, {
+        zones: [OFF_TODAY], spots: [], events: [EVENT],
+      }, { destinationStreets: true });
+      const r = byName(res, "Tottenham North — nearest street");
+      expect(r.valid).toBe(true);
+      expect(r.eventRisk?.venue).toBe("Tottenham Hotspur Stadium");
+      expect(r.badges).toEqual([]);
+    });
+
+    it("prefers an unconditional zone over an event-day one for the suggestion slots", () => {
+      const clean = {
+        ...OFF_TODAY,
+        id: "z-clean",
+        name: "Clean Zone",
+        // further away than z-spurs from the search point below
+        polys: [[[51.570, -0.086], [51.574, -0.086], [51.574, -0.082], [51.570, -0.082], [51.570, -0.086]] as [number, number][]],
+      };
+      const spots = offZoneStreetSpots(
+        { lat: 51.572, lng: -0.0785 }, [OFF_TODAY, clean], d(19, 10), d(19, 12), [], [EVENT],
+      );
+      expect(spots[0].zone).toBe("z-clean");
+    });
+
+    it("the real Haringey dataset flags its event zones", () => {
+      const ids = new Set(EVENT_CONTROLS.map((e) => e.zoneId));
+      expect(ids.size).toBeGreaterThanOrEqual(12);
+      // every flagged zone must actually exist in the engine's zone list
+      for (const e of EVENT_CONTROLS) {
+        expect(ALL_ZONES.find((z) => z.id === e.zoneId), e.zoneId).toBeDefined();
+        expect(e.venue.length).toBeGreaterThan(0);
+      }
+    });
+  });
+
+  describe("area-wide hours never clear a specific kerb", () => {
+    const boroughZone = BOROUGH_ZONES.find((z) => z.id === "boro-islington")!;
+    const resBay = {
+      n: "Test resident bay",
+      type: "res" as const,
+      zone: boroughZone.id,
+      lat: 51.548,
+      lng: -0.1,
+      note: "imported from OSM tagging",
+    };
+
+    it("a resident bay governed by an indicative borough schedule is never 'open to everyone'", () => {
+      // Sunday: the borough-wide guess says no control, but the real zone hours
+      // for this street are unknown — occupying a resident bay is the offence.
+      const res = evaluate({ lat: 51.548, lng: -0.1 }, d(19, 10), d(19, 12), {
+        zones: BOROUGH_ZONES,
+        spots: [resBay],
+      });
+      const bay = byName(res, "Test resident bay");
+      expect(bay.valid).toBe(false);
+      expect(bay.note).toContain("borough-wide");
+    });
+
+    it("a verified per-zone schedule still clears a resident bay outside hours", () => {
+      const res = evaluate(ANGEL, d(19, 10), d(19, 12), CURATED);
+      const bay = byName(res, "Gerrard Road (residents)");
+      expect(bay.valid).toBe(true);
+      expect(bay.costPence).toBe(0);
+    });
   });
 
   it("is off by default so the SPEC §6 expectations are unchanged", () => {
@@ -249,13 +467,13 @@ describe("borough fallback zones (real boundary data)", () => {
     expect(zoneAt(HIGHBURY, [fakePrecise, ...BOROUGH_ZONES])?.id).toBe("cam-test");
   });
 
-  it("Sat 10:30–14:30 in Islington outside the curated zones now charges for the controlled hours", () => {
+  it("Sat 10:30–14:30 in Islington: a borough-wide polygon can't price a bay on one street", () => {
     const res = evaluate(HIGHBURY, d(18, 10, 30), d(18, 14, 30), BOROUGH_DATASET, {
       destinationStreets: true,
     });
     const street = byName(res, "Streets at your destination");
-    expect(street.valid).toBe(true);
-    expect(street.costPence).toBe(1950); // Sat control 08:30–13:30 → 3h × £6.50
+    expect(street.valid).toBe(false);
+    expect(street.costPence).toBe(0);
     expect(street.note).toContain("Sat 08:30–13:30");
   });
 

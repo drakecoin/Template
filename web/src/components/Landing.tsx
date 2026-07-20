@@ -198,7 +198,11 @@ export function Landing(props: Props) {
             </>
           )}
         </div>
+      </div>
 
+      {/* Pinned low: thumb-reachable on a phone, and it keeps the map visible
+          between the search box and the "park here" action. */}
+      <div className="splash-foot">
         <button className="splash-pinbtn" onClick={props.onParkHere} aria-label="Park here and now — use my location">
           <PinMark className="splash-pin" />
         </button>

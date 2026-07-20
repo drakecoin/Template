@@ -50,6 +50,35 @@ Best Overall, Best Free, Closest, Cheapest Paid.
    shown greyed-out with a human reason.
 7. Never present a resident-only or restricted option as parkable during controlled
    hours — a wrong answer here means a £130 PCN for the user.
+8. **A zone polygon is an area fact, never a kerb fact.** Zone membership says the
+   area is controlled and when; it never says a bay exists on a given street. Only
+   a real bay record (`spots.bays.json`, OSM) may be typed `paid` and priced.
+   Kerbside known only from a polygon is `cpzStreet` — an advisory, unranked and
+   unpriced while the zone is active (we can't tell payable bay from resident-only).
+9. **Area-wide hours can't clear a specific kerb.** `zoneHoursTrusted(z)`
+   (`verified && kind !== "borough"`) gates any claim that a restriction is OFF.
+   A resident bay or single yellow governed by an indicative borough-wide schedule
+   is invalid, not "open to everyone" — the guess may be narrower than reality.
+   Paid bays keep their price but carry an explicit estimate warning.
+10. A CPZ that is *not* controlled during the window is ordinary free kerbside and
+   often the best answer, but has no curated spots — `offZoneStreetSpots` synthesises
+   the closest point inside each such zone (`nearestPointInZone`, nudged 20 m inside
+   the boundary). Verified per-zone CPZs only; skipped if the point resolves into a
+   controlled zone or sits within 40 m of a red-route `noStop` point.
+11. Any on-street bay whose governing zone is missing from the dataset is invalid —
+   unknown hours must never render as free.
+12. **Zero controlled overlap means "off on regular hours", not "off today".** The
+   ETL strips event-day clauses out of zone `sched`, so `zones.events.json`
+   (`EVENT_CONTROLS`, on `Dataset.events`) carries the stripped knowledge back.
+   `evaluate` applies the guard in ONE pass after the type branches — every path
+   that clears a restriction is covered. An option with un-charged time in a zone
+   that has event controls gets `eventRisk` + a warning naming the venue, and is
+   excluded from badges when free: no green "Recommended" on a kerb that may be
+   controlled. `offZoneStreetSpots` ranks unconditional zones ahead of these.
+   Resolving event risk properly needs a fixture feed (docs/EVENT_DAYS.md).
+13. `nearestPointInZone` returns undefined for a zone with no rings. The curated
+   `ZONES` carry hours but no geometry; answering `pt` for them claimed the zone
+   reached wherever the user stood, offering Islington streets to Tottenham.
 
 ## Conventions
 - TypeScript strict. No `any` in the engine.

@@ -1,4 +1,5 @@
 import { BOROUGH_ZONES } from "./boroughs.js";
+import { EVENT_CONTROLS } from "./importedEvents.js";
 import { MAPILLARY_SPOTS } from "./importedMapillary.js";
 import { RED_ROUTE_SPOTS } from "./importedRedRoutes.js";
 import { IMPORTED_SPOTS } from "./importedSpots.js";
@@ -287,4 +288,8 @@ export const ALL_SPOTS: Spot[] = [
   ...RED_ROUTE_SPOTS,
 ];
 
-export const DEFAULT_DATASET: Dataset = { zones: ALL_ZONES, spots: ALL_SPOTS };
+export const DEFAULT_DATASET: Dataset = {
+  zones: ALL_ZONES,
+  spots: ALL_SPOTS,
+  events: EVENT_CONTROLS,
+};

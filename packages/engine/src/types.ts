@@ -32,6 +32,12 @@ export type SpotType =
   | "res"
   | "yellow"
   | "freeSt"
+  /**
+   * Kerbside inside a CPZ where we have no kerb-level bay data: we know the
+   * zone and its hours, but not whether this street has pay-and-display bays,
+   * resident-only bays or no bays at all. Never priced as a paid bay.
+   */
+  | "cpzStreet"
   /** No stopping at any time (red route / clearway) — never parkable. */
   | "noStop"
   /** Loading ban — parking blocked only while the posted ban is active. */
@@ -62,9 +68,29 @@ export interface LatLng {
   lng: number;
 }
 
+/**
+ * Extra controlled hours a zone runs on event days (a stadium fixture, a park
+ * event). The borough publishes these alongside the regular hours, but whether
+ * today IS an event day needs a fixture feed we don't have — so this is a
+ * known-unknown attached to the zone, never a schedule we can evaluate.
+ */
+export interface EventControl {
+  /** Matches Zone.id of the precise CPZ this applies to. */
+  zoneId: string;
+  name: string;
+  /** Stadium or park driving the event control. */
+  venue: string;
+  /** Parsed event-day hours; empty when the borough published only prose. */
+  sched: SchedEntry[];
+  /** The borough's own wording, kept lossless for display. */
+  rawText: string;
+}
+
 export interface Dataset {
   zones: Zone[];
   spots: Spot[];
+  /** Event-day controls, keyed to zones by `zoneId`. */
+  events?: EventControl[];
 }
 
 export type Badge = "best" | "free" | "close" | "cheap";
@@ -82,4 +108,11 @@ export interface EvaluatedOption {
   /** costPence + walkMin * walk-penalty; Infinity when invalid. */
   score: number;
   badges: Badge[];
+  /**
+   * Set when this option is only free/parkable because its zone's *regular*
+   * hours are off, and that zone also runs event-day controls we can't resolve
+   * to today. Such options never receive badges — we won't put a green
+   * "Recommended" on a kerb that may be controlled.
+   */
+  eventRisk?: EventControl;
 }

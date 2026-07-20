@@ -11,7 +11,7 @@ import {
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { useEffect, useRef, useState } from "react";
-import { gmapsLink } from "../time";
+import { fmtWalk, gmapsLink } from "../time";
 
 type BaseLayer = "map" | "sat";
 
@@ -59,6 +59,7 @@ const ICONS: Record<Spot["type"], [string, string]> = {
   res: ["R", "res"],
   yellow: ["F", "free"],
   freeSt: ["F", "free"],
+  cpzStreet: ["Z", "res"],
   noStop: ["⊘", "nostop"],
   noLoad: ["L", "noload"],
 };
@@ -66,10 +67,12 @@ const ICONS: Record<Spot["type"], [string, string]> = {
 /**
  * Icon glyph + class for an evaluated option. A paid bay that is FREE during the
  * searched window drops the "£" for a tick on the free (green) badge, so it
- * never looks like it will cost money.
+ * never looks like it will cost money — and a CPZ street whose zone is off for
+ * the window is free parking, so it gets the green badge too.
  */
 function iconFor(r: EvaluatedOption): [string, string] {
   if (r.spot.type === "paid" && r.valid && r.costPence === 0) return ["✓", "free"];
+  if (r.spot.type === "cpzStreet" && r.valid) return ["F", "free"];
   return ICONS[r.spot.type];
 }
 
@@ -270,7 +273,7 @@ export function MapView({ dest, window: win, results, selection, onSelect, toast
           '<div class="pp-name">' + r.spot.n + "</div>" +
             '<span class="' + (r.costPence === 0 && r.valid ? "pp-cost pp-free" : "pp-cost") + '">' +
             (r.valid ? fmtCost(r.costPence) : "Not available") + "</span>" +
-            " · " + r.walkMin + ' min walk<br><span style="color:#43506E">' + r.note + "</span><br>" +
+            " · " + fmtWalk(r.km, r.walkMin, false) + '<br><span style="color:#43506E">' + r.note + "</span><br>" +
             '<a href="' + gmapsLink(r.spot.lat, r.spot.lng) +
             '" target="_blank" rel="noopener" style="font-weight:700;color:#1D6FEB">Navigate in Google Maps ↗</a>',
         )

@@ -1,6 +1,7 @@
 export * from "./types.js";
 export * from "./boroughs.js";
 export * from "./importedSpots.js";
+export * from "./importedEvents.js";
 export * from "./importedMapillary.js";
 export * from "./importedRedRoutes.js";
 export * from "./precise.js";

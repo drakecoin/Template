@@ -16,7 +16,7 @@ import { Landing } from "./components/Landing";
 import { MapView, type Selection } from "./components/MapView";
 import { ResultsSheet } from "./components/ResultsSheet";
 import { geocodePostcode, parsePostcode, searchAddress, type AddressHit } from "./geocode";
-import { buildWindow, fmtDT, roundQuarter, toHM, toISODate, type StayWindow } from "./time";
+import { buildWindow, fmtDT, fmtWalk, roundQuarter, toHM, toISODate, type StayWindow } from "./time";
 
 const LONDON_BBOX = { latMin: 51.28, latMax: 51.7, lngMin: -0.51, lngMax: 0.33 };
 const ANGEL: Place = { n: "Angel, Islington", a: "N1", lat: 51.5322, lng: -0.1057 };
@@ -110,7 +110,8 @@ export function App() {
       if (best) {
         showToast(
           best.costPence === 0
-            ? "Best pick: " + best.spot.n + " — free, " + best.walkMin + " min walk"
+            ? "Best pick: " + best.spot.n + " — free, " +
+              fmtWalk(best.km, best.walkMin, false).toLowerCase()
             : "Best pick: " + best.spot.n + " — " + fmtCost(best.costPence),
         );
       }
