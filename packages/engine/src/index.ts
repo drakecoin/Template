@@ -1,4 +1,5 @@
 export * from "./types.js";
+export * from "./tiers.js";
 export * from "./boroughs.js";
 export * from "./importedSpots.js";
 export * from "./importedEvents.js";

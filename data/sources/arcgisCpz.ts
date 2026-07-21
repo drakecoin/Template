@@ -1,3 +1,4 @@
+import { TIER } from "@kerbside/engine";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -243,6 +244,10 @@ export function transformArcgisCpz(
       kind: "cpz",
       // hours come straight from the council's own published layer
       verified: Boolean(parsed),
+      // Council-published only when we actually read their hours; otherwise
+      // this record carries the borough estimate and is tiered as one.
+      tier: parsed ? TIER.COUNCIL : TIER.ESTIMATE,
+      hoursSourceText: g.hoursText,
       src: spec.src,
       checkedAt,
       sched: parsed ?? spec.defaultSched,
@@ -251,8 +256,36 @@ export function transformArcgisCpz(
       polys: g.rings,
     });
   }
+  disambiguateNames(zones);
   zones.sort((a, b) => a.id.localeCompare(b.id));
   return zones;
+}
+
+/**
+ * Where one zone code covers several polygons with DIFFERENT hours, give each
+ * record the council's own hours wording in its name.
+ *
+ * Splitting on hours (see groupZones) is what keeps the stricter variant's
+ * evenings from reading as free, but it leaves several records sharing a
+ * display name. The app then shows "You're in Hackney Zone D — controlled until
+ * 23:00" beside a free-parking card reading "Hackney Zone D isn't controlled":
+ * both true of different polygons, and indistinguishable to someone deciding
+ * where to leave a car. Naming the variant is what makes the split legible.
+ */
+function disambiguateNames(zones: ZoneRecord[]): void {
+  const byName = new Map<string, ZoneRecord[]>();
+  for (const z of zones) {
+    const list = byName.get(z.name);
+    if (list) list.push(z);
+    else byName.set(z.name, [z]);
+  }
+  for (const [, list] of byName) {
+    if (list.length < 2) continue;
+    for (const z of list) {
+      const hours = z.hoursSourceText?.trim();
+      if (hours) z.name = z.name + " (" + hours + ")";
+    }
+  }
 }
 
 /**

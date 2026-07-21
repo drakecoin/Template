@@ -1,3 +1,4 @@
+import { TIER } from "@kerbside/engine";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,6 +17,14 @@ export interface ZoneRecord {
   name: string;
   kind: "cpz" | "borough";
   verified: boolean;
+  /**
+   * Trust tier (packages/engine/src/tiers.ts). This is the tier of the HOURS:
+   * a council layer whose hours we could not parse falls back to the borough
+   * estimate and must be tiered as one, however exact its boundary.
+   */
+  tier: number;
+  /** The council's own hours wording, used to disambiguate same-named zones. */
+  hoursSourceText?: string;
   src: string;
   checkedAt: string;
   sched: { days: number[]; from: string; to: string }[];
@@ -57,6 +66,7 @@ export async function loadBoroughZones(): Promise<ZoneRecord[]> {
       name: entry.fallback.name,
       kind: "borough" as const,
       verified: false,
+      tier: TIER.ESTIMATE,
       src: entry.src,
       checkedAt,
       sched: entry.fallback.sched,

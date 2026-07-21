@@ -396,3 +396,9 @@ input{font-family:inherit;color:inherit}
   .dlg-scrim{align-items:center}
   .dlg{border-radius:22px}
 }
+
+/* Source-tier provenance label (see packages/engine/src/tiers.ts). */
+.prov {
+  font-weight: 600;
+  opacity: 0.75;
+}

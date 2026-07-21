@@ -253,3 +253,51 @@ look for bay evidence.
 Every borough still fallback-only that has a public parking map: Wandsworth,
 Lewisham, Brent, Ealing, Croydon, Greenwich, Waltham Forest, Enfield, Islington,
 Southwark. A dead `data.*`/`gis.*` host means nothing — Hackney proved that.
+
+## Source tiers (21 Jul 2026)
+
+Trust is now an explicit field, not something inferred from which file a record
+came from. `packages/engine/src/tiers.ts` is the single definition; every zone
+and spot carries a `tier`, and `ALL_ZONES` is sorted by it so `zoneAt` returns
+the best available source rather than whichever array was spread first.
+
+| Tier | Name | What it is | Live? |
+|---|---|---|---|
+| 1 | USER | A verified user photo of the sign on that street | **empty — see below** |
+| 2 | COUNCIL | The borough's own portal, map backend, or published table | 466 zones |
+| 3 | AUTHORITY | TfL red-route network (authoritative for TfL roads only) | 628 points |
+| 4 | DETECTED | Mapillary sign detections — class + position, never the plate | 831 spots |
+| 5 | COMMUNITY | OSM `parking:*` tagging, no verification step | 85 groups |
+| 6 | ESTIMATE | Our borough-wide indicative schedule | 33 + 14 zones |
+
+Two rules the tier encodes:
+- **`tierCanClearRestriction` is tier <= 2.** Only the sign or the council can
+  say a restriction is OFF. Everything below either estimates, or observes that
+  a restriction exists — neither can clear a kerb (rule 9).
+- **The tier describes the HOURS, not the geometry.** A council layer whose
+  hours we could not parse falls back to the borough estimate and is tiered
+  ESTIMATE however exact its boundary. That is why 14 precise zones sit at tier
+  6 (Hillingdon's blank `Times` rows, and similar).
+
+### Tier 1 is reserved and deliberately empty
+
+"Update me" today stores a photo, a location and a date in **localStorage**
+(`web/src/report.ts`). It never leaves the device, is never parsed into hours,
+and nothing marks a report verified. So there is no user data to supersede the
+council with, and `tiers.test.ts` asserts the dataset contains no tier-1 record
+— if that test ever fails, the loop has been wired up and the questions below
+must have been answered first.
+
+Before anything writes tier 1, decide:
+1. **What makes a report "verified"?** One photo from one person is not
+   evidence — a misread or malicious report that clears a live restriction is a
+   £130 PCN for the next reader. Corroboration count? Council cross-check?
+   Moderation?
+2. **Where do reports live?** localStorage is one device; superseding council
+   data for other users needs a backend (Supabase was discussed, never built).
+3. **How do hours get out of a photo?** Either OCR/vision on the plate (the
+   accuracy spike in "Bay-data findings" is unstarted) or structured manual
+   entry in the report form.
+4. **Expiry.** A sign photo from 2024 should not outrank a council table
+   refreshed last week forever; `byTrust` breaks ties on `checkedAt` within a
+   tier but does not currently demote stale tier-1 across tiers.

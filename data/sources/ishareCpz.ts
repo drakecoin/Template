@@ -1,3 +1,4 @@
+import { TIER } from "@kerbside/engine";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -134,6 +135,7 @@ export function transformIshareCpz(
       name: spec.namePrefix + " " + g.name,
       kind: "cpz",
       verified: Boolean(parsed),
+      tier: parsed ? TIER.COUNCIL : TIER.ESTIMATE,
       src: spec.src,
       checkedAt,
       sched: parsed ?? [{ days: [1, 2, 3, 4, 5], from: "08:30", to: "18:30" }],

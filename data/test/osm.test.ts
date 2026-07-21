@@ -6,6 +6,7 @@ const ZONE: ZoneRecord = {
   id: "boro-islington",
   name: "Islington CPZ",
   kind: "borough",
+  tier: 6,
   verified: false,
   src: "https://example.test",
   checkedAt: "2026-07-18",

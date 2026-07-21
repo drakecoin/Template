@@ -240,6 +240,23 @@ Best Overall, Best Free, Closest, Cheapest Paid.
    look at what its parking map actually fetches.** The iShare sweep IS
    finished (Haringey is London's only one); the point is the backend can be
    any platform.
-16. Wire more borough portals (21 still fallback-only); parsed tariff tables
+16. **Source tiers are explicit** (`packages/engine/src/tiers.ts`): 1 USER,
+   2 COUNCIL, 3 AUTHORITY (TfL), 4 DETECTED (Mapillary), 5 COMMUNITY (OSM),
+   6 ESTIMATE. Every zone and spot carries `tier`; `ALL_ZONES` sorts by it so
+   `zoneAt` returns the best source, and `zoneHoursTrusted` is now
+   `tierCanClearRestriction` (tier <= 2). Two invariants:
+   - The tier is of the HOURS, not the geometry — a council layer whose hours
+     we couldn't parse is an ESTIMATE however exact its boundary (14 such).
+   - **Tier 1 is reserved and empty.** "Update me" stores a photo + location in
+     localStorage only; it is never parsed into hours, never leaves the device,
+     and nothing marks it verified. `tiers.test.ts` asserts no tier-1 record
+     exists. Before wiring it, answer the four questions in
+     docs/DATA_PIPELINE.md "Tier 1 is reserved" — above all what makes a report
+     verified, since a single bad report clearing a restriction is a £130 PCN.
+17. Where one zone code covers polygons with different hours, the council's own
+   hours wording is appended to the name (`disambiguateNames`). Without it the
+   app showed "Hackney Zone D — controlled to 23:00" beside a free-parking card
+   for a different "Hackney Zone D" — both true, indistinguishable to a driver.
+18. Wire more borough portals (21 still fallback-only); parsed tariff tables
    (COST columns); build the match-day feed + engine hook (docs/EVENT_DAYS.md)
    so event-risk warnings become real evaluations.

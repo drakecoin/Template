@@ -1,9 +1,11 @@
 import {
   ALL_ZONES,
   fmtCost,
+  TIER_LABEL,
   zoneActiveDuring,
   zoneHoursText,
   zoneRings,
+  zoneTier,
   type EvaluatedOption,
   type LatLng,
   type Spot,
@@ -223,7 +225,7 @@ export function MapView({ dest, window: win, results, selection, onSelect, toast
           : "<br>Not active for your times") +
         (borough ? "<br><i>Borough-level estimate — hours vary by zone</i>" : "") +
         "<br><a href='" + z.src + "' target='_blank' rel='noopener'>" +
-        (z.verified ? "Hours from borough website ↗" : "Indicative — check borough website ↗") +
+        TIER_LABEL[zoneTier(z)] + " — open source ↗" +
         "</a>";
       for (const ring of zoneRings(z)) {
         L.polygon(ring, {

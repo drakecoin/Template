@@ -1,3 +1,4 @@
+import { TIER } from "@kerbside/engine";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -148,6 +149,8 @@ export function transformCpzFeatures(
       kind: "cpz",
       // portal hours come straight from the council's own layer
       verified: Boolean(fromPortal || fromTable),
+      // Council portal hours (or our transcription of the council's table).
+      tier: fromPortal || fromTable ? TIER.COUNCIL : TIER.ESTIMATE,
       src: spec.src,
       checkedAt,
       sched: fromPortal ?? fromTable ?? spec.defaultSched,

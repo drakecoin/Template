@@ -1,3 +1,4 @@
+import { TIER } from "./tiers.js";
 import rawMapillary from "./data/spots.mapillary.json";
 import type { Spot, SpotType } from "./types.js";
 
@@ -31,4 +32,6 @@ export const MAPILLARY_SPOTS: Spot[] = (rawMapillary as RawMapillarySpot[])
     lng: s.lng,
     zone: s.zone,
     note: s.note,
+    // A detected sign: a class and a position, never the plate (rule 14).
+    tier: TIER.DETECTED,
   }));

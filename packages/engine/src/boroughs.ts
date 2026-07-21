@@ -1,3 +1,4 @@
+import type { SourceTier } from "./tiers.js";
 import rawBoroughs from "./data/zones.boroughs.json";
 import type { SchedEntry, Zone } from "./types.js";
 
@@ -6,6 +7,7 @@ interface RawBoroughZone {
   name: string;
   kind: string;
   verified: boolean;
+  tier?: number;
   src: string;
   checkedAt: string;
   sched: SchedEntry[];
@@ -23,6 +25,7 @@ export const BOROUGH_ZONES: Zone[] = (rawBoroughs as RawBoroughZone[]).map((z) =
   name: z.name,
   kind: "borough",
   verified: z.verified,
+  tier: z.tier as SourceTier | undefined,
   src: z.src,
   checkedAt: z.checkedAt,
   sched: z.sched,

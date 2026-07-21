@@ -1,3 +1,4 @@
+import type { SourceTier } from "./tiers.js";
 /** A single controlled-hours entry. days: 0=Sun .. 6=Sat, times "HH:MM" local. */
 export interface SchedEntry {
   days: number[];
@@ -8,6 +9,9 @@ export interface SchedEntry {
 export interface Zone {
   id: string;
   name: string;
+  /** Trust tier of these hours — see tiers.ts. Absent on curated zones, whose
+   *  tier is derived from `verified`/`kind` by `zoneTier()`. */
+  tier?: SourceTier;
   /** "cpz" (default): a specific zone. "borough": borough-level fallback from real boundary data. */
   kind?: "cpz" | "borough";
   verified: boolean;
@@ -45,6 +49,8 @@ export type SpotType =
 
 export interface Spot {
   n: string;
+  /** Trust tier of this record — see tiers.ts. */
+  tier?: SourceTier;
   type: SpotType;
   lat: number;
   lng: number;

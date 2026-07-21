@@ -1,3 +1,4 @@
+import { TIER } from "./tiers.js";
 import rawRedRoutes from "./data/spots.redroutes.json";
 import type { Spot } from "./types.js";
 
@@ -18,4 +19,4 @@ interface RawRedRouteSpot {
  */
 export const RED_ROUTE_SPOTS: Spot[] = (rawRedRoutes as RawRedRouteSpot[])
   .filter((s) => s.type === "noStop")
-  .map((s) => ({ n: s.n, type: "noStop" as const, lat: s.lat, lng: s.lng, note: s.note }));
+  .map((s) => ({ n: s.n, type: "noStop" as const, lat: s.lat, lng: s.lng, note: s.note, tier: TIER.AUTHORITY }));

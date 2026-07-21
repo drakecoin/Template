@@ -1,3 +1,4 @@
+import type { SourceTier } from "./tiers.js";
 import rawPrecise from "./data/zones.precise.json";
 import type { SchedEntry, Zone } from "./types.js";
 
@@ -6,6 +7,7 @@ interface RawPreciseZone {
   name: string;
   kind: string;
   verified: boolean;
+  tier?: number;
   src: string;
   checkedAt: string;
   sched: SchedEntry[];
@@ -24,6 +26,7 @@ export const PRECISE_ZONES: Zone[] = (rawPrecise as RawPreciseZone[]).map((z) =>
   name: z.name,
   kind: "cpz",
   verified: z.verified,
+  tier: z.tier as SourceTier | undefined,
   src: z.src,
   checkedAt: z.checkedAt,
   sched: z.sched,

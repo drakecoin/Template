@@ -1,4 +1,5 @@
 import { DEFAULT_DATASET } from "./data.js";
+import { tierCanClearRestriction, zoneTier } from "./tiers.js";
 import type {
   Badge,
   Dataset,
@@ -196,7 +197,7 @@ export function nearestPointInZone(pt: LatLng, zone: Zone, inset = 20): LatLng |
  * not good enough to tell someone a resident bay or yellow line is off.
  */
 export function zoneHoursTrusted(z: Zone): boolean {
-  return z.verified && z.kind !== "borough";
+  return tierCanClearRestriction(zoneTier(z));
 }
 
 /**

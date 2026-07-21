@@ -7,6 +7,7 @@ const ZONE: ZoneRecord = {
   id: "cam-ca-d",
   name: "Camden CA-D",
   kind: "cpz",
+  tier: 2,
   verified: true,
   src: "https://example.test",
   checkedAt: "2026-07-18",

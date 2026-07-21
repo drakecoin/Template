@@ -2,9 +2,11 @@ import {
   DATA_UPDATED,
   fmtCost,
   PRECISE_BOROUGHS,
+  TIER_LABEL,
   SEARCH_RADIUS_KM,
   WALK_MIN_PER_KM,
   zoneHoursText,
+  zoneTier,
   type Badge,
   type EvaluatedOption,
   type LatLng,
@@ -231,7 +233,8 @@ export function ResultsSheet({
         {results && destZone && (
           <p className="res-zone">
             You're in {destZone.name} — controlled {zoneHoursText(destZone)}
-            {destZone.verified ? "" : " (indicative)"}
+            {" · "}
+            <span className="prov">{TIER_LABEL[zoneTier(destZone)]}</span>
           </p>
         )}
         {results && (

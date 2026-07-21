@@ -5,6 +5,7 @@ import { MAPILLARY_SPOTS } from "./importedMapillary.js";
 import { RED_ROUTE_SPOTS } from "./importedRedRoutes.js";
 import { IMPORTED_SPOTS } from "./importedSpots.js";
 import { PRECISE_ZONES } from "./precise.js";
+import { byTrust, zoneTier } from "./tiers.js";
 import type { Dataset, Spot, Zone } from "./types.js";
 
 export interface Place {
@@ -271,11 +272,20 @@ export const PC_DISTRICTS: Record<string, [number, number]> = {
 };
 
 /**
- * Most precise first — zoneAt() returns the first match:
- * imported per-zone CPZs (real polygons from borough portals), then the
- * curated hand-drawn zones, then borough-level fallbacks on real boundaries.
+ * Most trusted first — zoneAt() returns the first match.
+ *
+ * Ordering is by trust TIER (tiers.ts), not by which file a zone came from.
+ * The two mostly agree, but not always: an imported zone whose hours we could
+ * not parse is an ESTIMATE despite its exact boundary, and must not outrank a
+ * zone transcribed from the council's own page. Sorting on the tier says that
+ * outright instead of leaving it to the order of the spread below.
+ *
+ * `sort` is stable, so within a tier the previous precedence still holds:
+ * imported per-zone CPZs, then curated zones, then borough-wide fallbacks.
  */
-export const ALL_ZONES: Zone[] = [...PRECISE_ZONES, ...ZONES, ...BOROUGH_ZONES];
+export const ALL_ZONES: Zone[] = [...PRECISE_ZONES, ...ZONES, ...BOROUGH_ZONES].sort(
+  byTrust<Zone>(zoneTier),
+);
 
 /**
  * Boroughs the UI may name as having council-sourced zone hours: those with at
