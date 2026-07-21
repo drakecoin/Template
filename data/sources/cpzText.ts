@@ -48,10 +48,21 @@ export function eventControlText(raw: string, eventOnly: boolean): string {
  * hours: the engine has no match-day calendar, so it would show a normally-free
  * Sunday as controlled and send drivers past a legal free space.
  */
-const EVENT_CONDITION = /\b(?:event\s+days?|special\s+occasions?|match\s+days?)\b/i;
+const EVENT_CONDITION = /\b(?:events?|special\s+occasions?|match\s+days?)\b/i;
 
 export function isEventConditional(text: string): boolean {
   return EVENT_CONDITION.test(text);
+}
+
+/**
+ * The venue named by an event clause, for boroughs that put it in the text
+ * instead of a registry constant ("Emirates Stadium events" -> "Emirates
+ * Stadium"). Hackney borders two, so a single per-borough venue won't do.
+ */
+export function venueFromEventClause(clause: string): string | null {
+  const m = /^(.*?)\s*\bevents?\b/i.exec(clause.trim());
+  const venue = m?.[1]?.trim();
+  return venue ? venue : null;
 }
 
 /** Normalise an hours fragment so parseScheduleText can read it. */

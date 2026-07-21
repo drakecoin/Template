@@ -5,7 +5,7 @@ import { outerRings, toLatLngRing, type GeoFeatureCollection } from "../geo.js";
 import type { ArcgisPortal, BoroughEntry, CpzHours } from "../registry.js";
 import { parseScheduleText } from "../schedule.js";
 import type { ZoneRecord } from "./boroughs.js";
-import { isEventConditional } from "./cpzText.js";
+import { isEventConditional, venueFromEventClause } from "./cpzText.js";
 import type { EventZoneRecord } from "./ishareCpz.js";
 
 /**
@@ -42,6 +42,7 @@ export interface ArcgisCpzSpec {
   zoneField?: string;
   areaField?: string;
   hoursPerField?: boolean;
+  hoursSplit?: RegExp;
   verifiedHours?: Record<string, CpzHours[]>;
   verifiedEvents?: Record<string, { venue: string; rawText: string }>;
   defaultSched: CpzHours[];
@@ -141,7 +142,15 @@ function groupZones(
   const groups = new Map<string, ZoneGroup>();
   for (const f of fc.features ?? []) {
     const props = f.properties;
-    const rawTexts = spec.hoursFields.map((k) => String(props[k] ?? "").trim()).filter(Boolean);
+    // `hoursSplit` breaks one column that holds several clauses into the same
+    // shape as a borough that puts one clause per column (Hackney separates
+    // "Mon-Fri 8.30am-6.30pm" and "Sat 8.30am-1.30pm" with <br>). Both then go
+    // through the per-clause path, which is the only safe way to read them.
+    const rawTexts = spec.hoursFields
+      .map((k) => String(props[k] ?? "").trim())
+      .flatMap((t) => (spec.hoursSplit ? t.split(spec.hoursSplit) : [t]))
+      .map((t) => t.trim())
+      .filter(Boolean);
     const rawText = rawTexts.join(" ");
     const code = spec.zoneField
       ? String(props[spec.zoneField] ?? "").trim()
@@ -325,7 +334,9 @@ function transformClauseEvents(
       eventOnly: !regularSched,
       regularSched,
       event: {
-        venue: spec.eventVenue ?? null,
+        // Prefer the venue the clause itself names — Hackney borders both the
+        // Emirates and the Olympic Park, so one venue per borough is wrong.
+        venue: venueFromEventClause(clauses[0]) ?? spec.eventVenue ?? null,
         // Parsing the clause's days/times would imply the engine knows which
         // dates they fall on; it doesn't, so rawText stays the only claim.
         sched: [],

@@ -21,6 +21,7 @@ import { loadBoroughZones, type ZoneRecord } from "./sources/boroughs.js";
 import { loadMapillarySigns, type MapillarySpot } from "./sources/mapillary.js";
 import { loadOsmKerbs } from "./sources/osm.js";
 import { loadArcgisCpz, loadArcgisEvents } from "./sources/arcgisCpz.js";
+import { loadGeoserverCpz, loadGeoserverEvents } from "./sources/geoserverCpz.js";
 import { loadIshareCpz, loadIshareEvents, type EventZoneRecord } from "./sources/ishareCpz.js";
 import { loadSocrataBays, type SpotRecord } from "./sources/socrataBays.js";
 import { loadSocrataCpz } from "./sources/socrataCpz.js";
@@ -70,7 +71,9 @@ for (const entry of BOROUGHS.filter((b) => b.portal?.cpz)) {
       ? await loadArcgisCpz(entry)
       : entry.portal!.kind === "ishare"
         ? await loadIshareCpz(entry)
-        : await loadSocrataCpz(entry);
+        : entry.portal!.kind === "geoserver"
+          ? await loadGeoserverCpz(entry)
+          : await loadSocrataCpz(entry);
   if (fresh) {
     precise.push(...fresh);
   } else {
@@ -100,6 +103,7 @@ const events: EventZoneRecord[] = [];
 const eventBoroughs = BOROUGHS.filter(
   (b) =>
     (b.portal?.kind === "ishare" && b.portal.cpz) ||
+    (b.portal?.kind === "geoserver" && b.portal.cpz) ||
     (b.portal?.kind === "arcgis" &&
       (b.portal.cpz?.eventStatusField ||
         b.portal.cpz?.hoursPerField ||
@@ -107,7 +111,11 @@ const eventBoroughs = BOROUGHS.filter(
 );
 for (const entry of eventBoroughs) {
   const fresh =
-    entry.portal!.kind === "arcgis" ? loadArcgisEvents(entry) : loadIshareEvents(entry);
+    entry.portal!.kind === "arcgis"
+      ? loadArcgisEvents(entry)
+      : entry.portal!.kind === "geoserver"
+        ? loadGeoserverEvents(entry)
+        : loadIshareEvents(entry);
   if (fresh) {
     events.push(...fresh);
   } else {

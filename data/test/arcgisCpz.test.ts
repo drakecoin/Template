@@ -430,3 +430,66 @@ describe("transformArcgisCpz — Hillingdon (same code, differing hours)", () =>
     expect(tc.sched).toEqual(HIL_SPEC.defaultSched);
   });
 });
+
+// --- Hackney shape: several clauses in ONE column, split on <br> -------------
+const HCK_SPEC: ArcgisCpzSpec = {
+  idPrefix: "hck",
+  namePrefix: "Hackney",
+  src: "https://www.hackney.gov.uk/parking-zones",
+  ratePence: 500,
+  maxStayHours: 4,
+  hoursFields: ["controlled_hours"],
+  zoneField: "zone",
+  hoursPerField: true,
+  hoursSplit: /<br\s*\/?>/i,
+  defaultSched: [{ days: [1, 2, 3, 4, 5], from: "08:30", to: "18:30" }],
+};
+
+const hckFeature = (zone: string, hours: string, lat: number, lng: number) => ({
+  type: "Feature",
+  properties: { zone, controlled_hours: hours },
+  geometry: { type: "Polygon", coordinates: square(lat, lng, 0.01) },
+});
+
+const HCK_FIXTURE: GeoFeatureCollection = {
+  type: "FeatureCollection",
+  features: [
+    hckFeature("Zone F", "Mon-Fri 8.30am-6.30pm<br>Sat 8.30am-1.30pm", 51.55, -0.06),
+    hckFeature("Zone G", "Mon-Fri 8.30am-6.30pm<br>Emirates Stadium events", 51.56, -0.09),
+    hckFeature("Zone K", "Mon-Fri 8.30am-6.30pm<br>QEOP Stadium events", 51.54, -0.02),
+  ],
+};
+
+describe("transformArcgisCpz — Hackney (clauses joined by <br>)", () => {
+  const zones = transformArcgisCpz(HCK_FIXTURE, "2026-07-21", HCK_SPEC);
+
+  it("splits the column so no phantom window is invented", () => {
+    // Parsing "Mon-Fri 8.30am-6.30pm Sat 8.30am-1.30pm" as one string also
+    // yields a bogus Sat 08:30-18:30 entry.
+    expect(zones.find((z) => z.id === "hck-zone-f")!.sched).toEqual([
+      { days: [1, 2, 3, 4, 5], from: "08:30", to: "18:30" },
+      { days: [6], from: "08:30", to: "13:30" },
+    ]);
+  });
+
+  it("drops a stadium-events clause from regular hours but keeps the zone", () => {
+    const g = zones.find((z) => z.id === "hck-zone-g")!;
+    expect(g.verified).toBe(true);
+    expect(g.sched).toEqual([{ days: [1, 2, 3, 4, 5], from: "08:30", to: "18:30" }]);
+  });
+});
+
+describe("transformArcgisEvents — venue read from the clause", () => {
+  const events = transformArcgisEvents(HCK_FIXTURE, "2026-07-21", HCK_SPEC);
+
+  it("names the venue each zone actually borders", () => {
+    expect(events.map((e) => [e.zoneKey, e.event.venue])).toEqual([
+      ["hck-zone-g", "Emirates Stadium"],
+      ["hck-zone-k", "QEOP Stadium"],
+    ]);
+  });
+
+  it("leaves a zone with no event clause alone", () => {
+    expect(events.some((e) => e.zoneKey === "hck-zone-f")).toBe(false);
+  });
+});

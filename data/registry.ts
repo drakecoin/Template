@@ -147,7 +147,35 @@ export interface IsharePortal {
   cpz?: IshareCpzPortal;
 }
 
-export type Portal = SocrataPortal | ArcgisPortal | IsharePortal;
+/**
+ * How to import a borough's CPZ layer from a **GeoServer** WFS — the backend
+ * behind a council's own map viewer (Hackney). Serves WGS84 GeoJSON directly,
+ * so no reprojection is needed, unlike the iShare GML path.
+ */
+export interface GeoserverCpzPortal {
+  /** Layer name including workspace, e.g. "parking:controlled_parking_zone". */
+  typeName: string;
+  zoneField: string;
+  /** Attribute(s) carrying the control hours. */
+  hoursFields: string[];
+  /**
+   * Splits one hours attribute holding several clauses (Hackney joins them
+   * with "<br>"). Each clause is then parsed on its own — joining them first
+   * makes the parser pair one clause's times with another's days.
+   */
+  hoursSplit?: RegExp;
+  ratePence: number;
+  maxStayHours: number;
+}
+
+export interface GeoserverPortal {
+  kind: "geoserver";
+  /** GeoServer root, e.g. "https://map2.hackney.gov.uk/geoserver". */
+  baseUrl: string;
+  cpz?: GeoserverCpzPortal;
+}
+
+export type Portal = SocrataPortal | ArcgisPortal | IsharePortal | GeoserverPortal;
 
 /** Borough-level fallback zone: real boundary + indicative, unverified hours. */
 export interface BoroughFallback {
@@ -336,13 +364,28 @@ export const BOROUGHS: BoroughEntry[] = [
     borough: "Hackney",
     displayName: "Hackney",
     zoneIdPrefix: "hck",
-    src: "https://hackney.gov.uk/parking-zones",
+    src: "https://www.hackney.gov.uk/parking-streets-and-transport/where-park/parking-zones",
     fallback: {
       id: "boro-hackney",
       name: "Hackney CPZ (borough-wide)",
       sched: [{ days: MF, from: "08:30", to: "18:30" }],
       ratePence: 500,
       maxStayHours: 4,
+    },
+    portal: {
+      kind: "geoserver",
+      // The GeoServer behind the council's own map at map2.hackney.gov.uk. It
+      // is in no open-data catalogue — the URL came out of the map's JS bundle.
+      baseUrl: "https://map2.hackney.gov.uk/geoserver",
+      cpz: {
+        typeName: "parking:controlled_parking_zone",
+        zoneField: "zone",
+        hoursFields: ["controlled_hours"],
+        // "Mon-Fri 8.30am-6.30pm<br>Sat 8.30am-1.30pm<br>Emirates Stadium events"
+        hoursSplit: /<br\s*\/?>/i,
+        ratePence: 500,
+        maxStayHours: 4,
+      },
     },
   },
   {

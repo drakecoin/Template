@@ -200,3 +200,56 @@ splits where a borough really did publish two schedules. It was **already
 wrong in production**: re-running the ETL took **Newham from 30 to 39 zones**,
 e.g. Prince Regent had Mon-Sun 08:00-22:00 and Mon-Sun 08:00-18:30 collapsed
 into a single record. Covered by tests in data/test/arcgisCpz.test.ts.
+
+## Fourth pass (21 Jul 2026) — the map-viewer backend route, Hackney wired
+
+The Haringey trick generalised, and it is now the **most productive remaining
+technique**: a council's own parking map is a web app, and the service behind it
+is usually public and machine-readable even when it appears in no catalogue and
+no borough ArcGIS org. Find it by loading the map page and reading what it
+fetches — the config, the JS bundle, or the network tab.
+
+Note this is NOT the iShare sweep, which is finished: all 28 remaining boroughs
+were checked for Astun iShare and Haringey is the only London one. The point is
+that the *backend* can be anything — GeoServer, ArcGIS, statmap, Cadcorp — so
+look at the map, not at a platform.
+
+**Hackney — WIRED, via exactly this route.** Every `data./map./maps./geo.
+hackney.gov.uk` host is dead and its data.gov.uk CPZ records carry no resource
+URLs, so the borough looked finished. But the parking page embeds a map at
+`map2.hackney.gov.uk` (a host no subdomain guess would produce). That page loads
+`lbh-webmap.min.js`, and grepping the bundle yields:
+
+    https://map2.hackney.gov.uk/geoserver/ows?service=WFS&version=2.0&request=GetFeature
+      &outputFormat=application/json&SrsName=EPSG:4326&typeName=…
+
+A public **GeoServer WFS** serving WGS84 GeoJSON, with a whole `parking:`
+workspace. `parking:controlled_parking_zone` gives 32 polygons with `zone` and
+`controlled_hours` -> **31 verified zones**, plus 6 event zones.
+
+New `kind:"geoserver"` portal + `data/sources/geoserverCpz.ts`. Because GeoServer
+returns GeoJSON directly (unlike the iShare GML/BNG path), the adapter is only a
+fetch and a snapshot — it delegates to `transformArcgisCpz`, which is
+portal-agnostic and already handles per-clause hours and event capture.
+
+Two things Hackney's data forced:
+1. **`hoursSplit`** — the hours live in ONE column with clauses joined by
+   `<br>` ("Mon-Fri 8.30am-6.30pm<br>Sat 8.30am-1.30pm"). Parsed as a single
+   string that yields a phantom `Sat 08:30-18:30`, the same failure RBKC showed.
+   `hoursSplit` breaks the column into clauses so the existing per-clause path
+   handles it.
+2. **Venue-per-clause** — clauses read "Emirates Stadium events" / "QEOP Stadium
+   events". Hackney borders both, so one `eventVenue` per borough is wrong;
+   `venueFromEventClause` reads the venue out of the text. `isEventConditional`
+   also had to widen from "event days" to plain "events".
+
+Other `parking:` layers on that GeoServer, not yet used:
+`inventory_pay_and_display_machine`, `parking_new_scheme`, `pcn_last_6_months`,
+plus car-club and cycle layers. The pay-and-display machine inventory is worth a
+look for bay evidence.
+
+### Worth re-running this route on
+
+Every borough still fallback-only that has a public parking map: Wandsworth,
+Lewisham, Brent, Ealing, Croydon, Greenwich, Waltham Forest, Enfield, Islington,
+Southwark. A dead `data.*`/`gis.*` host means nothing — Hackney proved that.

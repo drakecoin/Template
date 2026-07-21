@@ -222,6 +222,24 @@ Best Overall, Best Free, Closest, Cheapest Paid.
    (Prince Regent alone had Mon-Sun 08:00-22:00 and 08:00-18:30 merged into
    one). Rows that agree still collapse — the key only splits on real
    disagreement. `zones.precise.json` = **449 zones across 11 boroughs**.
-15. Wire more borough portals (22 still fallback-only); parsed tariff tables
+15. **Hackney wired via its map viewer's backend** (July 2026) — the Haringey
+   route generalised, and the most productive technique left. Hackney's
+   `data./map./gis.` hosts are all dead, but its parking page embeds a map at
+   `map2.hackney.gov.uk` whose JS bundle exposes a public **GeoServer WFS**
+   serving WGS84 GeoJSON. `parking:controlled_parking_zone` -> 31 verified
+   zones + 6 event zones. New `kind:"geoserver"` portal and
+   `data/sources/geoserverCpz.ts`, which is just fetch + snapshot: GeoServer
+   returns GeoJSON, so it delegates to `transformArcgisCpz` (portal-agnostic).
+   `zones.precise.json` = **480 zones across 12 boroughs**; 29 event zones.
+   - `hoursSplit` splits one column holding several clauses ("Mon-Fri
+     8.30am-6.30pm<br>Sat 8.30am-1.30pm"); parsed whole it invents a phantom
+     Sat 08:30-18:30, the same failure RBKC showed.
+   - `venueFromEventClause` reads the venue out of the clause: Hackney borders
+     both the Emirates and the Olympic Park, so one venue per borough is wrong.
+   **Do not conclude a borough is a dead end from dead `data.*`/`gis.*` hosts —
+   look at what its parking map actually fetches.** The iShare sweep IS
+   finished (Haringey is London's only one); the point is the backend can be
+   any platform.
+16. Wire more borough portals (21 still fallback-only); parsed tariff tables
    (COST columns); build the match-day feed + engine hook (docs/EVENT_DAYS.md)
    so event-risk warnings become real evaluations.
