@@ -301,3 +301,58 @@ Before anything writes tier 1, decide:
 4. **Expiry.** A sign photo from 2024 should not outrank a council table
    refreshed last week forever; `byTrust` breaks ties on `checkedAt` within a
    tier but does not currently demote stale tier-1 across tiers.
+
+## Geometry is council-sourced too, and tiered separately (21 Jul 2026)
+
+Yes — every council source we wire carries the CPZ **boundary**, not just hours:
+Camden's Socrata polygons, the ArcGIS/iShare/GeoServer layers, all of it lands
+in `zones.precise.json` as `polys` and is what `zoneAt` matches against. Council
+geometry already supersedes: borough fallbacks are the whole-borough outline and
+the curated `ZONES` in data.ts have **no geometry at all**, so they can never win
+a containment test.
+
+What was wrong was the modelling. `tier` describes the HOURS, so a council
+polygon whose hours we could not parse was tiered ESTIMATE — and after
+`ALL_ZONES` began sorting on that tier, its exact boundary ranked level with a
+borough outline. It stayed ahead only because `sort` is stable and precise zones
+happened to be spread first. That is an accident, not a guarantee.
+
+`zoneGeomTier()` now tiers the boundary independently, and `ALL_ZONES` sorts on
+geometry first, hours second. A council CPZ polygon beats a borough outline
+whatever we could read off it; among equally-drawn zones, the better hours win.
+Note the polygons are simplified to ~20 m (`TOLERANCE` in arcgisCpz), which is
+fine against a 20 m-accurate BNG reprojection but is not survey precision.
+
+## Fifth pass (21 Jul 2026) — batch attempted, NO new boroughs
+
+Ran the map-backend route over the next batch. Nothing wireable. The remaining
+boroughs cluster on **closed proprietary viewers**, which is a different problem
+from the catalogue gaps solved so far:
+
+- **Cadcorp** — blocks three at once. Wandsworth and Ealing run Cadcorp Aurora
+  (`maps.*.gov.uk/map/Aurora.svc/`), Barnet runs Cadcorp WebMap Layers
+  (`maps.barnet.gov.uk/WebMap/`). Aurora serves rendered images through
+  `Aurora.svc/run`; no feature/JSON endpoint is reachable without
+  reverse-engineering the session protocol. Probed the standard Cadcorp OGC
+  paths on all three (`/map/wfs.svc`, `/WebMap/wfs.svc`, `/map/wms.svc/public`,
+  named and unnamed): 400/404 throughout. The `.svc` roots answer with the WCF
+  "You have created a service" placeholder, i.e. the endpoint exists but no OGC
+  service is published. Same family as the `statmap.co.uk` hosts (Sutton,
+  Kingston), whose WFS is documented on data.gov.uk but now 403s — so Cadcorp
+  councils CAN expose WFS and these have chosen not to.
+- **Islington** — `map.islington.gov.uk/MapThatPublic` is a login-gated MapThat
+  app. The council's CPZ page does return zone + hours for a postcode, but
+  server-rendered with no client API and no geometry; per-postcode scraping
+  would hammer their site for a street list, not boundaries. Not pursued.
+- **Greenwich** `maps.royalgreenwich.gov.uk` — site-maintenance page.
+- **Hounslow**, **Barnet** roots — IIS default pages.
+- No map host resolves for Lewisham, Croydon, Waltham Forest, Enfield, Brent,
+  Redbridge, Bexley or Richmond under `maps./map./gis./mapping.`.
+
+**Revised outlook.** The boroughs still missing are not mostly "not yet found" —
+several are behind viewers with no open data path at all. Remaining routes worth
+trying, in order: (1) watch the network tab of each viewer in a real browser
+(Cadcorp Aurora may expose a queryable overlay the static HTML doesn't reveal);
+(2) hand-transcribe hours tables as done for Tower Hamlets, which needs no
+endpoint but gives no geometry — those boroughs would get council hours on a
+borough-outline boundary; (3) FOI / direct request for the CPZ layer.

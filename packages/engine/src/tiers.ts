@@ -69,6 +69,23 @@ export function zoneTier(z: Zone): SourceTier {
   return z.verified ? TIER.COUNCIL : TIER.ESTIMATE;
 }
 
+/**
+ * Tier of a zone's BOUNDARY, which is a different question from the tier of its
+ * hours. A council's own CPZ polygon is the real, surveyed extent of the zone;
+ * a borough fallback is an accurate boundary of the wrong thing (the whole
+ * borough); a curated zone has no geometry at all.
+ *
+ * `zoneAt` wants this one — when several zones contain a point, the answer is
+ * the most precisely drawn, regardless of whether we managed to parse its
+ * hours. Keeping the axes apart is what stops a council polygon with
+ * unreadable hours from being ranked as if its boundary were a guess.
+ */
+export function zoneGeomTier(z: Zone): SourceTier {
+  if (z.geomTier) return z.geomTier;
+  if (!z.poly && !z.polys?.length) return TIER.ESTIMATE;
+  return z.kind === "borough" ? TIER.ESTIMATE : TIER.COUNCIL;
+}
+
 export function spotTier(s: Spot): SourceTier {
   return s.tier ?? TIER.ESTIMATE;
 }

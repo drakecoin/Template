@@ -5,7 +5,7 @@ import { MAPILLARY_SPOTS } from "./importedMapillary.js";
 import { RED_ROUTE_SPOTS } from "./importedRedRoutes.js";
 import { IMPORTED_SPOTS } from "./importedSpots.js";
 import { PRECISE_ZONES } from "./precise.js";
-import { byTrust, zoneTier } from "./tiers.js";
+import { byTrust, zoneGeomTier, zoneTier } from "./tiers.js";
 import type { Dataset, Spot, Zone } from "./types.js";
 
 export interface Place {
@@ -283,9 +283,15 @@ export const PC_DISTRICTS: Record<string, [number, number]> = {
  * `sort` is stable, so within a tier the previous precedence still holds:
  * imported per-zone CPZs, then curated zones, then borough-wide fallbacks.
  */
-export const ALL_ZONES: Zone[] = [...PRECISE_ZONES, ...ZONES, ...BOROUGH_ZONES].sort(
-  byTrust<Zone>(zoneTier),
-);
+export const ALL_ZONES: Zone[] = [...PRECISE_ZONES, ...ZONES, ...BOROUGH_ZONES].sort((a, b) => {
+  // Geometry first: zoneAt asks "which zone am I in", and the best answer is
+  // the most precisely drawn boundary containing the point — a council CPZ
+  // polygon beats a borough outline even if we could not read its hours.
+  const geom = zoneGeomTier(a) - zoneGeomTier(b);
+  if (geom !== 0) return geom;
+  // Then the hours we would report for it, freshest first within a tier.
+  return byTrust<Zone>(zoneTier)(a, b);
+});
 
 /**
  * Boroughs the UI may name as having council-sourced zone hours: those with at

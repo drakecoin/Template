@@ -12,6 +12,10 @@ export interface Zone {
   /** Trust tier of these hours — see tiers.ts. Absent on curated zones, whose
    *  tier is derived from `verified`/`kind` by `zoneTier()`. */
   tier?: SourceTier;
+  /** Trust tier of the BOUNDARY — see zoneGeomTier(). Distinct from `tier`,
+   *  which is about the hours: a council polygon whose hours we could not read
+   *  still has a council-grade boundary. */
+  geomTier?: SourceTier;
   /** "cpz" (default): a specific zone. "borough": borough-level fallback from real boundary data. */
   kind?: "cpz" | "borough";
   verified: boolean;

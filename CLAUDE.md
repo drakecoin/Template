@@ -257,6 +257,16 @@ Best Overall, Best Free, Closest, Cheapest Paid.
    hours wording is appended to the name (`disambiguateNames`). Without it the
    app showed "Hackney Zone D — controlled to 23:00" beside a free-parking card
    for a different "Hackney Zone D" — both true, indistinguishable to a driver.
-18. Wire more borough portals (21 still fallback-only); parsed tariff tables
+18. `zoneGeomTier()` tiers a zone's BOUNDARY separately from its hours, and
+   `ALL_ZONES` sorts geometry-first. Council CPZ polygons are stored and do
+   supersede (borough fallbacks are whole-borough outlines; curated zones carry
+   no geometry at all) — but a council polygon whose hours we couldn't parse is
+   hours-tier ESTIMATE, and after tier sorting it was only staying ahead of a
+   borough outline by stable-sort accident. Now it is guaranteed.
+19. Cadcorp is the current wall: **Wandsworth, Ealing (Aurora) and Barnet
+   (WebMap)** publish no OGC service — every standard `.svc` path 400/404s and
+   the roots return the bare WCF placeholder. Islington is a login-gated
+   MapThat. See docs/DATA_PIPELINE.md "Fifth pass" before re-searching these.
+20. Wire more borough portals (21 still fallback-only); parsed tariff tables
    (COST columns); build the match-day feed + engine hook (docs/EVENT_DAYS.md)
    so event-risk warnings become real evaluations.

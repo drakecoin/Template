@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ALL_ZONES } from "../src/data.js";
 import { zoneHoursTrusted } from "../src/engine.js";
-import { TIER, byTrust, tierCanClearRestriction, zoneTier } from "../src/tiers.js";
+import { TIER, byTrust, tierCanClearRestriction, zoneGeomTier, zoneTier } from "../src/tiers.js";
 import type { Zone } from "../src/types.js";
 
 const zone = (over: Partial<Zone>): Zone => ({
@@ -59,9 +59,19 @@ describe("source tiers", () => {
     ]);
   });
 
-  it("puts the real dataset in trust order, so zoneAt returns the best source", () => {
-    const tiers = ALL_ZONES.map(zoneTier);
-    expect([...tiers].sort((a, b) => a - b)).toEqual(tiers);
+  it("orders the real dataset by boundary precision, so zoneAt lands on the CPZ", () => {
+    // zoneAt returns the FIRST containing zone, and a borough outline contains
+    // every CPZ inside it — so council polygons must all precede fallbacks.
+    const geom = ALL_ZONES.map(zoneGeomTier);
+    expect([...geom].sort((a, b) => a - b)).toEqual(geom);
+  });
+
+  it("keeps boundary tier independent of hours tier", () => {
+    // A council polygon we could not read the hours off still has a
+    // council-grade boundary, and must not sort behind a borough outline.
+    const unreadable = zone({ kind: "cpz", tier: TIER.ESTIMATE, polys: [[[51, -0.1]]] });
+    expect(zoneTier(unreadable)).toBe(TIER.ESTIMATE);
+    expect(zoneGeomTier(unreadable)).toBe(TIER.COUNCIL);
   });
 
   it("has no live tier-1 data yet — user reports are not wired in", () => {
