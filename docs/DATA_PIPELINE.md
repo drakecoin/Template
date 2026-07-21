@@ -40,3 +40,43 @@ bays (point/linestring, type, zoneId-by-spatial-join), carparks (operator feeds)
 Searching any point in Camden or Islington uses genuine zone boundaries + published
 hours, with the borough page linked from the zone popup, and all SPEC §6 tests
 re-pass against the real dataset (update expected values where real tariffs differ).
+
+## Bay-data findings (researched 20 Jul 2026)
+
+Goal was kerb-level bays beyond Camden. Conclusion: **blocked by availability,
+not by our code.** What was checked and found:
+
+1. **ArcGIS Online / borough ArcGIS servers** — searched the arcgis.com catalogue
+   ("parking bays", "CPZ", "controlled parking zones", …) and probed borough
+   services directly (e.g. Merton's `public_ParkingServices_Parking_Layers` has
+   CPZ boundaries, permit-eligibility and school streets — no bays). No London
+   borough publishes a bay-level layer this way.
+2. **Socrata** — the global discovery API (api.eu.socrata.com) returns exactly
+   one London bay dataset: Camden "Parking Bays" (already wired, 1,128 groups).
+3. **OSM kerb tagging** (`parking:left/right/both` + legacy `parking:lane`):
+   5,897 inner-London ways, but only ~136 carry a machine-usable restriction
+   (res/paid). ~2,000 classify as bare "parking exists" — correctly dropped
+   inside CPZs, since that is not evidence of free parking (engine rule 9).
+   Widening the bbox adds more of the same; not worth it until mappers tag
+   restrictions.
+4. **OSM car parks** (`amenity=parking`): well-mapped (~900 ways in a central
+   slice; ~60% carry `fee`, ~24% `capacity`) but effectively zero tariff data
+   (`charge` ≈ 0%), so they cannot be priced without an operator feed
+   (Parkopedia / NCP — see Sources §4).
+5. **Mapillary sign detections**: class + position only — the detection cannot
+   read the plate beneath the sign, which is where bay type (pay vs permit),
+   hours, tariff and max-stay live. Hence detections are `cpzStreet`
+   observations, never priced bays (CLAUDE.md rule 14).
+
+### Proposed next step: plate-OCR spike (not yet started)
+
+Mapillary street-level *imagery* (CC-BY-SA — allowed, unlike Google) can show
+the plate. Pipeline sketch: for each `information--parking` detection, fetch
+nearby images via the Mapillary Images API → crop the sign region → read the
+plate with a vision model → parse hours through the existing
+`parseScheduleText`, plus bay type / tariff / max-stay. Risks: plate legibility
+(glare/angle/distance) will cut yield hard; a misread plate that turns a
+resident bay into "free" is a £130 PCN. So: spike on a handful of known signs
+first and measure accuracy; any shipped output is `verified:false`, must never
+clear a restriction (rule 9), and feeds the "Update me" loop as "sign says…"
+evidence rather than authoritative bays.

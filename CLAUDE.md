@@ -152,5 +152,22 @@ Best Overall, Best Free, Closest, Cheapest Paid.
    `eventVenue` in the registry; `transformArcgisEvents` emits matching records
    whose `preciseZoneId` is guaranteed to equal the zone pass's id (both go
    through the shared `groupZones`). 20 event zones: 15 Haringey + 5 Newham.
-7. Wire more borough portals; parsed tariff tables (COST columns); kerb-level
-   bay data beyond Camden; build the match-day feed + engine hook (docs/EVENT_DAYS.md).
+7. Kerb-level bays beyond Camden — **blocked by data availability, not code**
+   (researched July 2026, see docs/DATA_PIPELINE.md "Bay-data findings"):
+   Camden is the only London borough publishing bay-level open data (nothing on
+   ArcGIS Online, nothing else on Socrata). OSM kerb tagging: 5,897 inner-London
+   ways but only ~136 carry a usable restriction — the rest record that parking
+   exists without the restriction, and are correctly dropped inside CPZs (a bare
+   "parking exists" inside a CPZ is not evidence of free parking). OSM
+   `amenity=parking` car parks are well-mapped (~900 ways central) but carry no
+   tariff (`charge` ≈ 0%), so they can't be priced without an operator feed.
+8. The credible path to bay attributes at scale: Mapillary street-level IMAGERY
+   + a vision model reading the text plate under each detected P-sign (licence
+   permits it; Google Street View does not). Proposed as a spike first: pull
+   images near known detections, crop, read plate, parse via `parseScheduleText`;
+   measure accuracy before committing. Output must ship indicative and must not
+   clear restrictions (rule 9) — a misread plate is a £130 PCN. Position it as
+   "sign says…" evidence feeding the "Update me" loop, not authoritative bays.
+9. Wire more borough portals (25 boroughs still fallback-only); parsed tariff
+   tables (COST columns); build the match-day feed + engine hook
+   (docs/EVENT_DAYS.md) so event-risk warnings become real evaluations.
