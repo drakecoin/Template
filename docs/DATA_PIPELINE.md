@@ -165,3 +165,38 @@ Caveats to settle before wiring:
    disabling TLS verification for an ETL source is not something to do quietly —
    decide deliberately (pinned CA, or accept and document) before wiring.
 3. It needs an ArcGIS **bays** adapter; today only Socrata bays are supported.
+
+## Third sweep (21 Jul 2026) — Hillingdon wired, grouping bug found
+
+Alternate org slugs are worth trying: `<slug>.maps.arcgis.com/sharing/rest/
+portals/self` resolved five more London orgs under names the obvious slug
+missed — `lbhillingdon`, `lbbarnet`, `cityoflondon`, `southwarkcouncil`,
+`islingtoncouncil`. Of those only **Hillingdon** holds a CPZ layer; Southwark,
+Islington and Barnet orgs return nothing for parking/cpz, which finally settles
+Southwark (its only CPZ data was the dead misoportal WFS).
+
+Also checked and empty: Hackney (every `data./map./maps./geo.hackney.gov.uk`
+host is dead; its data.gov.uk CPZ records carry no resource URLs), Brent and
+Ealing (`data.*.gov.uk` are JS portal shells with no service behind them).
+
+**Hillingdon — WIRED.** `Car_Park__CPZ_and_Railways_WFL1/FeatureServer/4`,
+84 rows -> 68 zones. `Zones` short code + `Label_2` area + `Times`
+("9am to 5pm - Mon to Sat"). 15 rows have blank `Times` and land on the
+indicative fallback; one row reads "8am to 6am ... Max stay 2 hours", which the
+parser rejects outright rather than guessing — both correct. Note `Times`
+sometimes appends "Max stay 2 hours" while the record's `maxStayHours` stays the
+borough default, so don't treat this borough's max stay as authoritative.
+
+### The grouping bug it exposed
+
+Hillingdon publishes one zone name over rows with **different** control (Zone H1
+has four schedules, from Mon-Fri 9-5 to Mon-Sun 9am-10pm). `groupZones` keyed on
+code(+area), so all rows merged and the first row's hours won — the rest of the
+zone's evenings and Sundays then read as uncontrolled. That is the rule 7
+direction that costs £130.
+
+The key now includes the hours text. Identical rows still collapse, so this only
+splits where a borough really did publish two schedules. It was **already
+wrong in production**: re-running the ETL took **Newham from 30 to 39 zones**,
+e.g. Prince Regent had Mon-Sun 08:00-22:00 and Mon-Sun 08:00-18:30 collapsed
+into a single record. Covered by tests in data/test/arcgisCpz.test.ts.

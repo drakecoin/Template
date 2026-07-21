@@ -369,3 +369,64 @@ describe("transformArcgisEvents — verified-table event zones", () => {
     ]);
   });
 });
+
+// --- Hillingdon shape: one zone code published with several different hours --
+const HIL_SPEC: ArcgisCpzSpec = {
+  idPrefix: "hil",
+  namePrefix: "Hillingdon",
+  src: "https://www.hillingdon.gov.uk/parking",
+  ratePence: 300,
+  maxStayHours: 4,
+  hoursFields: ["Times"],
+  zoneField: "Zones",
+  areaField: "Label_2",
+  defaultSched: [{ days: [1, 2, 3, 4, 5], from: "08:00", to: "18:30" }],
+};
+
+const hilFeature = (code: string, area: string, times: string, lat: number, lng: number) => ({
+  type: "Feature",
+  properties: { Zones: code, Label_2: area, Times: times },
+  geometry: { type: "Polygon", coordinates: square(lat, lng, 0.01) },
+});
+
+const HIL_FIXTURE: GeoFeatureCollection = {
+  type: "FeatureCollection",
+  features: [
+    // one code, two areas, genuinely different control
+    hilFeature("H1", "Harmondsworth", "9am to 5pm - Mon to Fri", 51.48, -0.48),
+    hilFeature("H1", "Harlington", "9am to 10pm - Mon to Sun", 51.49, -0.42),
+    // identical rows for one area still collapse into a single record
+    hilFeature("HY1", "Nield Road", "9am to 5pm - Mon to Sat", 51.51, -0.42),
+    hilFeature("HY1", "Nield Road", "9am to 5pm - Mon to Sat", 51.515, -0.425),
+    // blank hours -> indicative fallback, never presented as sourced
+    hilFeature("TC", "Hayes Town", " ", 51.5, -0.41),
+  ],
+};
+
+describe("transformArcgisCpz — Hillingdon (same code, differing hours)", () => {
+  const zones = transformArcgisCpz(HIL_FIXTURE, "2026-07-21", HIL_SPEC);
+
+  it("keeps each published schedule instead of letting the first row win", () => {
+    // Merging H1 would apply Mon-Fri 9-5 to Harlington, whose evenings and
+    // Sundays ARE controlled — the costly direction under rule 7.
+    const harlington = zones.find((z) => z.id === "hil-h1-harlington")!;
+    expect(harlington.sched).toEqual([
+      { days: [1, 2, 3, 4, 5, 6, 0], from: "09:00", to: "22:00" },
+    ]);
+    expect(zones.find((z) => z.id === "hil-h1-harmondsworth")!.sched).toEqual([
+      { days: [1, 2, 3, 4, 5], from: "09:00", to: "17:00" },
+    ]);
+  });
+
+  it("still merges rows that agree, rather than splitting on geometry", () => {
+    const hy1 = zones.filter((z) => z.id.startsWith("hil-hy1"));
+    expect(hy1).toHaveLength(1);
+    expect(hy1[0].polys).toHaveLength(2);
+  });
+
+  it("leaves a blank-hours zone indicative", () => {
+    const tc = zones.find((z) => z.id.startsWith("hil-tc"))!;
+    expect(tc.verified).toBe(false);
+    expect(tc.sched).toEqual(HIL_SPEC.defaultSched);
+  });
+});

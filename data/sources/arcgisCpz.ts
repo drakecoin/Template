@@ -157,9 +157,15 @@ function groupZones(
       : undefined;
     // Group so that distinct hour/area variants of a code stay separate
     // (Kingston Zone S central vs outer differ), but identical rows merge.
-    // Areas are part of the key so a code that repeats across areas (RBKC's
-    // "Control 1") stays one record per area rather than merging into one blob.
-    const key = spec.zoneField ? code + "|" + (area ?? "") : rawText;
+    // Area AND hours are part of the key. Area, so a code that repeats across
+    // areas (RBKC's "Control 1") stays one record per area. Hours, because a
+    // borough may publish one zone name over rows with genuinely different
+    // control (Hillingdon's Zone H1 spans four, from Mon-Fri 9-5 to Mon-Sun
+    // 9am-10pm): keying on the code alone merged them and kept whichever row
+    // happened to come first, so the stricter rows' evenings and Sundays read
+    // as free. Identical rows still collapse — the key only splits when the
+    // published hours actually differ.
+    const key = spec.zoneField ? code + "|" + (area ?? "") + "|" + rawText : rawText;
     const group =
       groups.get(key) ??
       { code, area, hoursText: rawText, hoursTexts: rawTexts, eventStatus, rings: [] };

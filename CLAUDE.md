@@ -209,6 +209,19 @@ Best Overall, Best Free, Closest, Cheapest Paid.
    searched only ArcGIS Online and Socrata. Not wired: `CHARGE` is empty (hours
    and max-stay are real), the host serves a **self-signed cert** that Node will
    reject, and it needs an ArcGIS bays adapter. See docs/DATA_PIPELINE.md.
-13. Wire more borough portals (23 still fallback-only); parsed tariff tables
+13. **Hillingdon wired** (July 2026): `Car_Park__CPZ_and_Railways_WFL1`
+   FeatureServer/4, 68 zones (60 verified; 8 have a blank `Times` and correctly
+   stay indicative). `Zones` is the short code, `Label_2` the area, `Times` a
+   time-first string the shared parser already reads.
+14. **Grouping now keys on the hours text too** (`groupZones`). A borough can
+   publish one zone name over rows with genuinely different control —
+   Hillingdon's Zone H1 spans four schedules, Mon-Fri 9-5 through Mon-Sun
+   9am-10pm. Keying on code(+area) alone merged them and kept whichever row came
+   first, so the stricter rows' evenings and Sundays silently read as free.
+   This was live, not hypothetical: the fix split **Newham 30 -> 39 zones**
+   (Prince Regent alone had Mon-Sun 08:00-22:00 and 08:00-18:30 merged into
+   one). Rows that agree still collapse — the key only splits on real
+   disagreement. `zones.precise.json` = **449 zones across 11 boroughs**.
+15. Wire more borough portals (22 still fallback-only); parsed tariff tables
    (COST columns); build the match-day feed + engine hook (docs/EVENT_DAYS.md)
    so event-risk warnings become real evaluations.

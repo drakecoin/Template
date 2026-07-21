@@ -818,6 +818,27 @@ export const BOROUGHS: BoroughEntry[] = [
       ratePence: 300,
       maxStayHours: 4,
     },
+    portal: {
+      kind: "arcgis",
+      cpz: {
+        // "Car Park, CPZ and Railways" layer 4 — the borough's parking-management
+        // schemes. `Zones` is the short code (H1, HY1, E), `Label_2` the area,
+        // `Times` a time-first string ("9am to 5pm - Mon to Sat").
+        //
+        // 15 of 84 rows have a blank `Times`; those parse to null and correctly
+        // land on the indicative fallback rather than claiming hours we don't
+        // have. A few rows append "Max stay 2 hours" to the times text — the
+        // parser ignores the tail, and maxStayHours here stays the borough
+        // default, so don't read this zone's max stay as authoritative.
+        layerUrl:
+          "https://services1.arcgis.com/vBu1s2ZA7rxzmHBD/arcgis/rest/services/Car_Park__CPZ_and_Railways_WFL1/FeatureServer/4",
+        zoneField: "Zones",
+        areaField: "Label_2",
+        hoursFields: ["Times"],
+        ratePence: 300,
+        maxStayHours: 4,
+      },
+    },
   },
   {
     borough: "Harrow",
