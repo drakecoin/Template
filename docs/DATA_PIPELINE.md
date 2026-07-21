@@ -356,3 +356,31 @@ trying, in order: (1) watch the network tab of each viewer in a real browser
 (2) hand-transcribe hours tables as done for Tower Hamlets, which needs no
 endpoint but gives no geometry — those boroughs would get council hours on a
 borough-outline boundary; (3) FOI / direct request for the CPZ layer.
+
+## Cadcorp/Aurora and the London Datastore, both falsified (21 Jul 2026)
+
+Route 1 (watch the viewer's network tab in a real browser) is **still untested** —
+both browser surfaces were unavailable this session (the in-app pane hung on
+every navigate and the Chrome extension reported not connected). It remains the
+most promising route for Wandsworth/Ealing/Barnet and should be retried.
+
+Two things WERE settled without a browser:
+
+1. **Aurora IS statmap.** Wandsworth's frame script is
+   `StatMap.JS.Aurora.AuroraFrame` (SharpKit-compiled) — the same vendor as
+   `sutton.statmap.co.uk` and `kingston.statmap.co.uk`. So Wandsworth, Ealing,
+   Barnet, Sutton and Kingston are one platform family, and cracking it opens
+   several boroughs at once.
+
+   **But Wandsworth's WFS is definitively off, not misnamed.** The earlier 418
+   responses looked like "wrong service name"; they are not. A control request
+   for `wfs.svc/zzz_nonsense_xyz` returns the **same 418** as every plausible
+   name (public, open_data, open_data_wfs, open_data_lbs_wfs, inspire,
+   wandsworth, wbc, parking). 418 is just this platform's "no WFS published".
+   Do not spend more time guessing statmap service names on Wandsworth.
+
+2. **The London Datastore has no CPZ data.** `data.london.gov.uk` runs CKAN at
+   `/api/action/package_search` (note: `/api/datasets/search` and `/api/search`
+   are 404 — only the CKAN action API works). Of its 1,319 datasets, **zero**
+   match "controlled parking" / "CPZ" / "parking zone". There is no pan-London
+   aggregated CPZ layer to shortcut the per-borough work.
