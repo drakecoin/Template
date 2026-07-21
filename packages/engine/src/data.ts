@@ -1,4 +1,5 @@
 import { BOROUGH_ZONES } from "./boroughs.js";
+import BOROUGH_NAMES from "./data/boroughs.names.json";
 import { EVENT_CONTROLS } from "./importedEvents.js";
 import { MAPILLARY_SPOTS } from "./importedMapillary.js";
 import { RED_ROUTE_SPOTS } from "./importedRedRoutes.js";
@@ -275,6 +276,20 @@ export const PC_DISTRICTS: Record<string, [number, number]> = {
  * curated hand-drawn zones, then borough-level fallbacks on real boundaries.
  */
 export const ALL_ZONES: Zone[] = [...PRECISE_ZONES, ...ZONES, ...BOROUGH_ZONES];
+
+/**
+ * Boroughs the UI may name as having council-sourced zone hours: those with at
+ * least one zone `zoneHoursTrusted` accepts — an imported per-zone CPZ, or a
+ * hand-verified curated zone (Islington Zone B, Westminster E). Borough-wide
+ * fallbacks are excluded by the `kind !== "borough"` test, so an estimate can
+ * never put a borough on this list.
+ *
+ * Derived rather than hand-written: the previous fixed sentence named boroughs
+ * whose data had since changed, telling users an estimate came from the council.
+ */
+export const PRECISE_BOROUGHS: string[] = (BOROUGH_NAMES as string[]).filter((borough) =>
+  ALL_ZONES.some((z) => z.verified && z.kind !== "borough" && z.name.startsWith(borough)),
+);
 
 /**
  * Curated spots, kerb-level bays imported from borough open data / OSM,

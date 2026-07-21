@@ -168,6 +168,47 @@ Best Overall, Best Free, Closest, Cheapest Paid.
    measure accuracy before committing. Output must ship indicative and must not
    clear restrictions (rule 9) — a misread plate is a £130 PCN. Position it as
    "sign says…" evidence feeding the "Update me" loop, not authoritative bays.
-9. Wire more borough portals (25 boroughs still fallback-only); parsed tariff
-   tables (COST columns); build the match-day feed + engine hook
-   (docs/EVENT_DAYS.md) so event-risk warnings become real evaluations.
+9. **RBKC wired** (July 2026) from the council's own ArcGIS server, layer
+   `RBKC/INSPIRE/MapServer/13` "Residents Parking Control" -> 9 verified zones,
+   `zones.precise.json` now **356 zones across 9 boroughs**. Two mechanisms were
+   added for it and are reusable:
+   - `hoursPerField` — parse each hours column separately and concatenate.
+     RBKC puts one whole clause per column (Control_1 weekdays, Control_2 Sat,
+     Control_3 Sun); space-joining them first makes `parseScheduleText` pair a
+     later clause's end time with an earlier clause's days and emit a phantom
+     window. Joining stays the default (H&F splits ONE clause across columns).
+   - `areaField` — a second column to disambiguate a zone code that repeats
+     across areas (RBKC "Control 1" covers three named areas). Remember to add
+     any new field to the `outFields` list in `fetchLive`, or it comes back
+     empty and the zones silently merge.
+   RBKC states event rules inside the hours text ("(on event days)", "on
+   special occasions") rather than in a status column, so `isEventConditional`
+   (cpzText) drops those clauses from regular hours and `transformClauseEvents`
+   captures them — 22 event zones now (15 Haringey, 5 Newham, 2 RBKC).
+10. `PRECISE_BOROUGHS` (engine `data.ts`) derives the boroughs the UI may call
+   council-sourced from zones `zoneHoursTrusted` accepts, using the borough
+   names the ETL writes to `boroughs.names.json`. It replaced a hardcoded
+   sentence in `ResultsSheet` that had gone stale and was telling users
+   estimated hours came from the council. Don't hand-edit that list again.
+11. **Tower Hamlets wired** (July 2026): `Parking_Permit_Mini_Zones_view`
+   FeatureServer/159, 16 mini zones. The layer has geometry + `ZONE_CODE` and
+   **no hours**, so `verifiedHours` (previously Socrata-only, for Camden) now
+   exists on the ArcGIS portal too and carries hours transcribed from the
+   council's published table. `zones.precise.json` = **372 zones across 10
+   boroughs**. Two safety decisions to preserve:
+   - A6/B3/C2 are split by street inside a single polygon with different hours
+     per side, and the layer can't distinguish them. Each takes the **union** of
+     both patterns — deliberately over-stating control, because rule 7 makes
+     "free when actually controlled" the expensive direction.
+   - B4's Sunday control applies **only on London Stadium event days**, so it
+     is NOT in the regular sched; `verifiedEvents` emits a `zones.events.json`
+     record instead and rule 12 warns. 23 event zones now.
+12. **City of London has bay-level data** (`mapping.cityoflondon.gov.uk`,
+   INSPIRE MapServer layers 69 Pay Display / 76 Resident / 52 Waiting) — a
+   second borough beyond Camden, which the July research missed because it
+   searched only ArcGIS Online and Socrata. Not wired: `CHARGE` is empty (hours
+   and max-stay are real), the host serves a **self-signed cert** that Node will
+   reject, and it needs an ArcGIS bays adapter. See docs/DATA_PIPELINE.md.
+13. Wire more borough portals (23 still fallback-only); parsed tariff tables
+   (COST columns); build the match-day feed + engine hook (docs/EVENT_DAYS.md)
+   so event-risk warnings become real evaluations.

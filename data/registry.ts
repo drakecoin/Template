@@ -67,6 +67,39 @@ export interface ArcgisCpzPortal {
   hoursFields: string[];
   /** Zone-code column; omit when the code lives inside the hours text ("Zone X"). */
   zoneField?: string;
+  /**
+   * Descriptive-area column to append to the zone code, for boroughs whose code
+   * column repeats across areas (RBKC: Control = "Control 1" for three
+   * different named areas). Only read when `zoneField` is set — without it the
+   * area is parsed out of the hours text instead.
+   */
+  areaField?: string;
+  /**
+   * Parse each `hoursFields` column on its own and concatenate the results,
+   * instead of space-joining the columns into one string first.
+   *
+   * Required for boroughs that put one complete day+time clause per column
+   * (RBKC: Control_1 = "8:30am - 10:00pm Monday to Friday", Control_2 =
+   * "8:30am - 6:30pm Saturday"). Joining those produces a string with several
+   * time-first clauses in a row, which parseScheduleText mis-reads — it pairs a
+   * later clause's end time with an earlier clause's days and emits a phantom
+   * window. Joining stays the default because it is what a borough splitting a
+   * single clause across columns needs (H&F: DAYS + TIME_).
+   */
+  hoursPerField?: boolean;
+  /**
+   * Hand-verified hours by zone code, for layers that publish the zone
+   * geometry but no hours columns at all (Tower Hamlets). Same contract as the
+   * Socrata portal's `verifiedHours`: cite the source in the borough entry, and
+   * only use hours read off the council's own page.
+   */
+  verifiedHours?: Record<string, CpzHours[]>;
+  /**
+   * Zone codes whose control extends on event days, for boroughs that state
+   * this in prose rather than in the layer. Emitted as `zones.events.json`
+   * records so rule 12 can warn — the engine still never applies them itself.
+   */
+  verifiedEvents?: Record<string, { venue: string; rawText: string }>;
   ratePence: number;
   maxStayHours: number;
   /**
@@ -158,6 +191,67 @@ const CAMDEN_VERIFIED_HOURS: Record<string, CpzHours[]> = {
     { days: [6], from: "08:30", to: "13:30" },
   ],
   CAU: [{ days: MF, from: "10:00", to: "12:00" }],
+};
+
+const ALLDAY = { from: "00:00", to: "23:59" };
+
+/**
+ * Tower Hamlets hours, read off towerhamlets.gov.uk "Parking zones and
+ * controlled parking times" (July 2026). The borough's ArcGIS layer publishes
+ * the 16 mini-zone polygons with a code and nothing else, so the hours are
+ * hand-transcribed and keyed by that code.
+ *
+ * Three zones are split by street inside one polygon, and the layer gives us no
+ * way to tell which side of the split a point is on. Each takes the UNION of
+ * both published patterns — over-stating when control applies. That direction is
+ * the safe one: rule 7 says the costly error is calling a controlled kerb free,
+ * and rule 9 already refuses to let these clear a restriction. The narrower
+ * reading is recoverable (a user sees a free bay listed as controlled); the
+ * wider one is a £130 PCN.
+ *  - A6: "Mon-Sun 8.30am-10pm in RESIDENT bays west of Brick Lane, otherwise
+ *    Mon-Fri 8.30am-7pm; Sun 8.30am-2pm" -> Mon-Sun 08:30-22:00.
+ *  - B3: Chrisp St area Mon-Sat, rest Mon-Fri (both 8.30-5.30) -> Mon-Sat.
+ *  - C2: Trinity Square Mon-Sat + Sun, rest Mon-Fri -> Mon-Sat + Sun.
+ */
+const TOWER_HAMLETS_VERIFIED_HOURS: Record<string, CpzHours[]> = {
+  A1: [{ days: MF, from: "08:30", to: "17:30" }, { days: [0], from: "08:30", to: "14:00" }],
+  A2: [{ days: MF, from: "08:30", to: "17:30" }, { days: [0], from: "08:30", to: "14:00" }],
+  A3: [{ days: MS, from: "08:30", to: "17:30" }],
+  A4: [{ days: MF, from: "08:30", to: "17:30" }],
+  // "Monday from midnight to 7pm, Tuesday and Wednesday from 8.30am to 7pm,
+  // Thursday from 8.30am to midnight and all-day Friday, Saturday, and Sunday."
+  A5: [
+    { days: [1], from: "00:00", to: "19:00" },
+    { days: [2, 3], from: "08:30", to: "19:00" },
+    { days: [4], from: "08:30", to: "23:59" },
+    { days: [5, 6, 0], ...ALLDAY },
+  ],
+  A6: [{ days: [0, 1, 2, 3, 4, 5, 6], from: "08:30", to: "22:00" }],
+  B1: [{ days: MS, from: "08:30", to: "17:30" }],
+  B2: [{ days: MF, from: "08:30", to: "17:30" }],
+  B3: [{ days: MS, from: "08:30", to: "17:30" }],
+  // Sunday control is EVENT DAYS ONLY — see TOWER_HAMLETS_VERIFIED_EVENTS.
+  B4: [{ days: MS, from: "08:30", to: "19:30" }],
+  C1: [{ days: MF, from: "08:30", to: "17:30" }],
+  C2: [{ days: MS, from: "08:30", to: "17:30" }, { days: [0], from: "08:30", to: "14:00" }],
+  C3: [{ days: MF, from: "08:30", to: "17:30" }],
+  C4: [{ days: MF, from: "08:30", to: "17:30" }],
+  D1: [{ days: MF, from: "08:30", to: "17:30" }],
+  D2: [{ days: MF, from: "08:30", to: "17:30" }],
+};
+
+/**
+ * B4 gains a Sunday control on London Stadium event days. Its regular hours
+ * (Mon-Sat) leave Sunday clear, so without this record the engine would call a
+ * B4 Sunday free on a match day — exactly the rule 12 failure mode.
+ */
+const TOWER_HAMLETS_VERIFIED_EVENTS: Record<string, { venue: string; rawText: string }> = {
+  B4: {
+    venue: "London Stadium",
+    rawText:
+      "Event days only sun 8.30am to 7.30pm — event dates are posted on the CPZ " +
+      "entry signs and the London Stadium website (towerhamlets.gov.uk, July 2026)",
+  },
 };
 
 /**
@@ -255,13 +349,29 @@ export const BOROUGHS: BoroughEntry[] = [
     borough: "Tower Hamlets",
     displayName: "Tower Hamlets",
     zoneIdPrefix: "twh",
-    src: "https://www.towerhamlets.gov.uk/lgnl/transport_and_streets/parking/parking.aspx",
+    src: "https://www.towerhamlets.gov.uk/lgnl/transport_and_streets/Parking/parking_zones_and_charges/Parking_zones.aspx",
     fallback: {
       id: "boro-towerhamlets",
       name: "Tower Hamlets CPZ (borough-wide)",
       sched: [{ days: MF, from: "08:30", to: "17:30" }],
       ratePence: 450,
       maxStayHours: 4,
+    },
+    portal: {
+      kind: "arcgis",
+      cpz: {
+        // "Parking Permit Mini Zones" — the 16 mini-zone polygons behind the
+        // borough's own parking map. Geometry and a ZONE_CODE only, so the
+        // hours come from the transcribed table above rather than the layer.
+        layerUrl:
+          "https://services1.arcgis.com/KZuCGRSe2K5BiG1Z/arcgis/rest/services/Parking_Permit_Mini_Zones_view/FeatureServer/159",
+        zoneField: "ZONE_CODE",
+        hoursFields: [],
+        verifiedHours: TOWER_HAMLETS_VERIFIED_HOURS,
+        verifiedEvents: TOWER_HAMLETS_VERIFIED_EVENTS,
+        ratePence: 450,
+        maxStayHours: 4,
+      },
     },
   },
   {
@@ -275,6 +385,26 @@ export const BOROUGHS: BoroughEntry[] = [
       sched: [{ days: MS, from: "08:30", to: "18:30" }],
       ratePence: 650,
       maxStayHours: 4,
+    },
+    portal: {
+      kind: "arcgis",
+      cpz: {
+        // RBKC "Residents Parking Control" on the council's own ArcGIS server
+        // (the same box that serves the LBHF layer). One day+time clause per
+        // column — Control_1 weekdays, Control_2 Saturday, Control_3 Sunday —
+        // hence hoursPerField. `Control` ("Control 1".."Control 8") is the code
+        // and repeats across areas, so Area_Name disambiguates.
+        //
+        // Layer 4 ("Controlled Parking Zones - SYL") is deliberately NOT used:
+        // single-yellow-line zones carry no hours columns at all.
+        layerUrl: "https://www.rbkc.gov.uk/arcgis/rest/services/RBKC/INSPIRE/MapServer/13",
+        zoneField: "Control",
+        areaField: "Area_Name",
+        hoursFields: ["Control_1", "Control_2", "Control_3"],
+        hoursPerField: true,
+        ratePence: 650,
+        maxStayHours: 4,
+      },
     },
   },
   {
@@ -333,7 +463,7 @@ export const BOROUGHS: BoroughEntry[] = [
     borough: "Southwark",
     displayName: "Southwark",
     zoneIdPrefix: "swk",
-    src: "https://www.southwark.gov.uk/parking/parking-zones",
+    src: "https://www.southwark.gov.uk/parking-streets-and-transport/parking",
     fallback: {
       id: "boro-southwark",
       name: "Southwark CPZ (most streets)",

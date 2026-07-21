@@ -1,6 +1,7 @@
 import {
   DATA_UPDATED,
   fmtCost,
+  PRECISE_BOROUGHS,
   SEARCH_RADIUS_KM,
   WALK_MIN_PER_KM,
   zoneHoursText,
@@ -131,6 +132,13 @@ function Card({
       </div>
     </div>
   );
+}
+
+
+/** "A, B and C" — the boroughs whose hours we can attribute to the council. */
+function formatBoroughList(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? "no boroughs yet";
+  return names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
 }
 
 export function ResultsSheet({
@@ -316,9 +324,9 @@ export function ResultsSheet({
         )}
       </div>
       <div className="disclaimer">
-        Zone hours for Camden, Islington, Westminster, Kingston, Hammersmith &amp; Fulham and Haringey
-        follow the borough websites (tap a zone for the source). Other zones, tariffs &amp; bay
-        positions are indicative — always check street signage.
+        Zone hours for {formatBoroughList(PRECISE_BOROUGHS)} follow the borough websites (tap a zone
+        for the source). Other zones, tariffs &amp; bay positions are indicative — always check
+        street signage.
       </div>
     </div>
   );

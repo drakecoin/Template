@@ -5,6 +5,7 @@ import { outerRings, toLatLngRing, type GeoFeatureCollection } from "../geo.js";
 import type { ArcgisPortal, BoroughEntry, CpzHours } from "../registry.js";
 import { parseScheduleText } from "../schedule.js";
 import type { ZoneRecord } from "./boroughs.js";
+import { isEventConditional } from "./cpzText.js";
 import type { EventZoneRecord } from "./ishareCpz.js";
 
 /**
@@ -39,6 +40,10 @@ export interface ArcgisCpzSpec {
   maxStayHours: number;
   hoursFields: string[];
   zoneField?: string;
+  areaField?: string;
+  hoursPerField?: boolean;
+  verifiedHours?: Record<string, CpzHours[]>;
+  verifiedEvents?: Record<string, { venue: string; rawText: string }>;
   defaultSched: CpzHours[];
   eventStatusField?: string;
   eventStatusMatch?: RegExp;
@@ -60,6 +65,10 @@ function specFor(entry: BoroughEntry): ArcgisCpzSpec | null {
     maxStayHours: cpz.maxStayHours,
     hoursFields: cpz.hoursFields,
     zoneField: cpz.zoneField,
+    areaField: cpz.areaField,
+    hoursPerField: cpz.hoursPerField,
+    verifiedHours: cpz.verifiedHours,
+    verifiedEvents: cpz.verifiedEvents,
     defaultSched,
     eventStatusField: cpz.eventStatusField,
     eventStatusMatch: cpz.eventStatusMatch,
@@ -87,6 +96,11 @@ function extractZoneArea(text: string): string | undefined {
   return m ? m[1].trim() : undefined;
 }
 
+/** Zone code as a verifiedHours key: uppercase alphanumerics ("A-1" -> "A1"). */
+function normalizeCode(code: string): string {
+  return code.toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
 function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
@@ -108,6 +122,8 @@ interface ZoneGroup {
   code: string;
   area?: string;
   hoursText: string;
+  /** The hours columns kept apart, for `hoursPerField` boroughs. */
+  hoursTexts: string[];
   /** Raw value of the borough's event-status column, when it declares one. */
   eventStatus?: string;
   rings: number[][][];
@@ -125,23 +141,28 @@ function groupZones(
   const groups = new Map<string, ZoneGroup>();
   for (const f of fc.features ?? []) {
     const props = f.properties;
-    const rawText = spec.hoursFields
-      .map((k) => String(props[k] ?? "").trim())
-      .filter(Boolean)
-      .join(" ");
+    const rawTexts = spec.hoursFields.map((k) => String(props[k] ?? "").trim()).filter(Boolean);
+    const rawText = rawTexts.join(" ");
     const code = spec.zoneField
       ? String(props[spec.zoneField] ?? "").trim()
       : extractZoneCode(rawText);
     if (!code) continue;
-    const area = spec.zoneField ? undefined : extractZoneArea(rawText);
+    const area = spec.zoneField
+      ? spec.areaField
+        ? String(props[spec.areaField] ?? "").trim() || undefined
+        : undefined
+      : extractZoneArea(rawText);
     const eventStatus = spec.eventStatusField
       ? String(props[spec.eventStatusField] ?? "").trim() || undefined
       : undefined;
     // Group so that distinct hour/area variants of a code stay separate
     // (Kingston Zone S central vs outer differ), but identical rows merge.
-    const key = spec.zoneField ? code : rawText;
+    // Areas are part of the key so a code that repeats across areas (RBKC's
+    // "Control 1") stays one record per area rather than merging into one blob.
+    const key = spec.zoneField ? code + "|" + (area ?? "") : rawText;
     const group =
-      groups.get(key) ?? { code, area, hoursText: rawText, eventStatus, rings: [] };
+      groups.get(key) ??
+      { code, area, hoursText: rawText, hoursTexts: rawTexts, eventStatus, rings: [] };
     // One flagged row is enough to mark the whole zone.
     if (eventStatus && !group.eventStatus) group.eventStatus = eventStatus;
     for (const ring of outerRings(f)) group.rings.push(toLatLngRing(ring, TOLERANCE));
@@ -161,6 +182,34 @@ function groupZones(
   return out;
 }
 
+/**
+ * The zone's regular control schedule, or null when it can't be read (caller
+ * falls back to the borough default and leaves the record unverified).
+ *
+ * `hoursPerField` boroughs are parsed one column at a time and concatenated:
+ * each column is a self-contained clause, and running them through the parser
+ * as one joined string makes it pair one clause's times with another's days.
+ * Event-only clauses are dropped here — see isEventConditional — and a column
+ * that won't parse fails the whole zone rather than shipping a partial week
+ * that would read as "free" outside the hours we happened to understand.
+ */
+function parseHours(g: ZoneGroup, spec: ArcgisCpzSpec): CpzHours[] | null {
+  // A hand-verified table wins: boroughs that publish geometry-only layers have
+  // no hours to parse, and where both exist the transcription was read off the
+  // council's page for exactly the codes the layer couldn't describe.
+  const verified = spec.verifiedHours?.[normalizeCode(g.code)];
+  if (verified) return verified;
+  if (!spec.hoursPerField) return parseScheduleText(cleanHoursText(g.hoursText));
+  const sched: CpzHours[] = [];
+  for (const text of g.hoursTexts) {
+    if (isEventConditional(text)) continue;
+    const parsed = parseScheduleText(cleanHoursText(text));
+    if (!parsed) return null;
+    sched.push(...parsed);
+  }
+  return sched.length ? sched : null;
+}
+
 /** Pure transform: an ArcGIS CPZ FeatureCollection -> normalised zone records. */
 export function transformArcgisCpz(
   fc: GeoFeatureCollection,
@@ -171,7 +220,7 @@ export function transformArcgisCpz(
 
   const zones: ZoneRecord[] = [];
   for (const { id, group: g } of groupZones(fc, spec)) {
-    const parsed = parseScheduleText(cleanHoursText(g.hoursText));
+    const parsed = parseHours(g, spec);
     const label = zoneLabel(g.code, g.area);
     zones.push({
       id,
@@ -202,6 +251,11 @@ export function transformArcgisEvents(
   checkedAt: string,
   spec: ArcgisCpzSpec,
 ): EventZoneRecord[] {
+  // Two shapes produce event zones: a status column (Newham), or an
+  // event-conditional clause sitting in one of the hours columns (RBKC's
+  // "…(on event days)"). The latter is only separable per column.
+  if (spec.verifiedEvents) return transformVerifiedEvents(fc, checkedAt, spec);
+  if (spec.hoursPerField) return transformClauseEvents(fc, checkedAt, spec);
   if (!spec.eventStatusField || !spec.eventStatusMatch) return [];
   const match = spec.eventStatusMatch;
   const records: EventZoneRecord[] = [];
@@ -228,6 +282,94 @@ export function transformArcgisEvents(
           JSON.stringify(g.hoursText) + " are the regular hours only",
       },
       rawOpTimes: g.hoursText,
+      ratePence: spec.ratePence,
+      maxStayHours: spec.maxStayHours,
+      src: spec.src,
+      checkedAt,
+      polys: g.rings,
+    });
+  }
+  records.sort((a, b) => a.zoneKey.localeCompare(b.zoneKey));
+  return records;
+}
+
+/**
+ * Event zones for `hoursPerField` boroughs, where the event rule is a whole
+ * hours column ("8.30am - 5pm Saturday to Sunday (on event days)"). Captured
+ * only — the engine still can't apply event days (docs/EVENT_DAYS.md) — but the
+ * clause is kept verbatim so the future match-day feature has the real wording,
+ * and `regularSched` records what the zone does on an ordinary week.
+ */
+function transformClauseEvents(
+  fc: GeoFeatureCollection,
+  checkedAt: string,
+  spec: ArcgisCpzSpec,
+): EventZoneRecord[] {
+  const records: EventZoneRecord[] = [];
+  for (const { id, group: g } of groupZones(fc, spec)) {
+    const clauses = g.hoursTexts.filter(isEventConditional);
+    if (!clauses.length) continue;
+    const regularSched = parseHours(g, spec);
+    records.push({
+      zoneKey: id,
+      name: zoneLabel(g.code, g.area),
+      borough: spec.namePrefix,
+      // The zone still controls on ordinary days, so it stays in zones.precise.
+      preciseZoneId: regularSched ? id : null,
+      eventOnly: !regularSched,
+      regularSched,
+      event: {
+        venue: spec.eventVenue ?? null,
+        // Parsing the clause's days/times would imply the engine knows which
+        // dates they fall on; it doesn't, so rawText stays the only claim.
+        sched: [],
+        bankHoliday: null,
+        rawText: clauses.join(" "),
+      },
+      rawOpTimes: g.hoursText,
+      ratePence: spec.ratePence,
+      maxStayHours: spec.maxStayHours,
+      src: spec.src,
+      checkedAt,
+      polys: g.rings,
+    });
+  }
+  records.sort((a, b) => a.zoneKey.localeCompare(b.zoneKey));
+  return records;
+}
+
+/**
+ * Event zones for boroughs whose event rule is published as prose on the
+ * council's site rather than in the layer (Tower Hamlets B4 on London Stadium
+ * days). The registry names which codes are affected; the polygons still come
+ * from the live layer so the record covers the same ground as the zone.
+ */
+function transformVerifiedEvents(
+  fc: GeoFeatureCollection,
+  checkedAt: string,
+  spec: ArcgisCpzSpec,
+): EventZoneRecord[] {
+  const table = spec.verifiedEvents ?? {};
+  const records: EventZoneRecord[] = [];
+  for (const { id, group: g } of groupZones(fc, spec)) {
+    const declared = table[normalizeCode(g.code)];
+    if (!declared) continue;
+    records.push({
+      zoneKey: id,
+      name: zoneLabel(g.code, g.area),
+      borough: spec.namePrefix,
+      preciseZoneId: id,
+      eventOnly: false,
+      regularSched: parseHours(g, spec),
+      event: {
+        venue: declared.venue,
+        // No parsed schedule: the engine has no fixture list, so presence of
+        // the record is the whole signal (rule 12) and rawText is the claim.
+        sched: [],
+        bankHoliday: null,
+        rawText: declared.rawText,
+      },
+      rawOpTimes: g.hoursText || declared.rawText,
       ratePence: spec.ratePence,
       maxStayHours: spec.maxStayHours,
       src: spec.src,
@@ -269,7 +411,7 @@ async function fetchLive(entry: BoroughEntry): Promise<GeoFeatureCollection> {
   const portal = entry.portal as ArcgisPortal;
   const cpz = portal.cpz!;
   const label = entry.zoneIdPrefix;
-  const fields = [cpz.zoneField, ...cpz.hoursFields, cpz.eventStatusField]
+  const fields = [cpz.zoneField, cpz.areaField, ...cpz.hoursFields, cpz.eventStatusField]
     .filter(Boolean)
     .join(",");
   const base = cpz.layerUrl.replace(/\/+$/, "") + "/query";
@@ -337,7 +479,7 @@ export async function loadArcgisCpz(entry: BoroughEntry): Promise<ZoneRecord[] |
  */
 export function loadArcgisEvents(entry: BoroughEntry): EventZoneRecord[] | null {
   const spec = specFor(entry);
-  if (!spec?.eventStatusField) return null;
+  if (!spec || (!spec.eventStatusField && !spec.hoursPerField && !spec.verifiedEvents)) return null;
   const snapshot = snapshotPath(entry);
   if (!existsSync(snapshot)) return null;
   const fc = JSON.parse(readFileSync(snapshot, "utf8")) as GeoFeatureCollection;

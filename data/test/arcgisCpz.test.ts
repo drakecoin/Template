@@ -187,3 +187,185 @@ describe("transformArcgisEvents — status-column event zones", () => {
     expect(transformArcgisEvents(HF_FIXTURE, "2026-07-20", HF_SPEC)).toEqual([]);
   });
 });
+
+// --- RBKC shape: one day+time clause per column, code repeated across areas --
+const RBKC_SPEC: ArcgisCpzSpec = {
+  idPrefix: "rbkc",
+  namePrefix: "Kensington & Chelsea",
+  src: "https://www.rbkc.gov.uk/parking/parking-zones-and-bays",
+  ratePence: 650,
+  maxStayHours: 4,
+  hoursFields: ["Control_1", "Control_2", "Control_3"],
+  zoneField: "Control",
+  areaField: "Area_Name",
+  hoursPerField: true,
+  defaultSched: [{ days: [1, 2, 3, 4, 5, 6], from: "08:30", to: "18:30" }],
+};
+
+const rbkcFeature = (
+  control: string,
+  area: string,
+  c1: string,
+  c2: string,
+  c3: string,
+  lat: number,
+  lng: number,
+) => ({
+  type: "Feature",
+  properties: { Control: control, Area_Name: area, Control_1: c1, Control_2: c2, Control_3: c3 },
+  geometry: { type: "Polygon", coordinates: square(lat, lng, 0.01) },
+});
+
+const WEEKDAYS = "8:30am - 10:00pm Monday to Friday";
+const RBKC_FIXTURE: GeoFeatureCollection = {
+  type: "FeatureCollection",
+  features: [
+    rbkcFeature("Control 1", "Queensdale Area", WEEKDAYS, "8:30am - 6:30pm Saturday", "1:00pm - 5:00pm Sunday", 51.5, -0.21),
+    // same code, different area -> must stay a separate record
+    rbkcFeature("Control 1", "Knightsbridge Shopping Area", WEEKDAYS, "8:30am - 6:30pm Saturday", "1:00pm - 5:00pm Sunday", 51.49, -0.16),
+    // event-conditional Sunday clause -> must not become regular hours
+    rbkcFeature("Control 8", "Earls Court Exhibition Centre", WEEKDAYS, "8:30am - 6:30pm Saturday", "8.30am - 5pm Saturday to Sunday (on event days)", 51.49, -0.2),
+    // unnamed area -> still imported, keyed on the control code alone
+    rbkcFeature("Control 4", "", "8:30am - 6:30pm Monday to Friday", "8:30am - 1:30pm Saturday", "", 51.48, -0.18),
+  ],
+};
+
+describe("transformArcgisCpz — RBKC (one clause per column)", () => {
+  const zones = transformArcgisCpz(RBKC_FIXTURE, "2026-07-21", RBKC_SPEC);
+
+  it("keeps a repeated control code separate per named area", () => {
+    expect(zones.map((z) => z.id)).toEqual([
+      "rbkc-control-1-knightsbridge-shopping-area",
+      "rbkc-control-1-queensdale-area",
+      "rbkc-control-4",
+      "rbkc-control-8-earls-court-exhibition-centre",
+    ]);
+  });
+
+  it("concatenates per-column clauses without inventing a phantom window", () => {
+    // Joining the columns first makes the parser pair Saturday's 6:30pm end
+    // with Monday-Friday, emitting an extra 08:30-18:30 weekday entry.
+    expect(zones.find((z) => z.id === "rbkc-control-1-queensdale-area")!.sched).toEqual([
+      { days: [1, 2, 3, 4, 5], from: "08:30", to: "22:00" },
+      { days: [6], from: "08:30", to: "18:30" },
+      { days: [0], from: "13:00", to: "17:00" },
+    ]);
+  });
+
+  it("never lets an event-day clause become regular hours", () => {
+    const earls = zones.find((z) => z.id === "rbkc-control-8-earls-court-exhibition-centre")!;
+    expect(earls.sched).toEqual([
+      { days: [1, 2, 3, 4, 5], from: "08:30", to: "22:00" },
+      { days: [6], from: "08:30", to: "18:30" },
+    ]);
+    // no Sunday control on an ordinary week
+    expect(earls.sched.some((s) => s.days.includes(0))).toBe(false);
+    expect(earls.verified).toBe(true);
+  });
+
+  it("imports zones whose area column is blank", () => {
+    const c4 = zones.find((z) => z.id === "rbkc-control-4")!;
+    expect(c4.name).toBe("Kensington & Chelsea Control 4");
+    expect(c4.sched).toEqual([
+      { days: [1, 2, 3, 4, 5], from: "08:30", to: "18:30" },
+      { days: [6], from: "08:30", to: "13:30" },
+    ]);
+  });
+});
+
+describe("transformArcgisEvents — clause-column event zones", () => {
+  const events = transformArcgisEvents(RBKC_FIXTURE, "2026-07-21", RBKC_SPEC);
+
+  it("captures only the zone with an event clause, verbatim", () => {
+    expect(events).toHaveLength(1);
+    expect(events[0].zoneKey).toBe("rbkc-control-8-earls-court-exhibition-centre");
+    expect(events[0].event.rawText).toBe("8.30am - 5pm Saturday to Sunday (on event days)");
+  });
+
+  it("records the ordinary-week hours and invents no event schedule", () => {
+    expect(events[0].eventOnly).toBe(false);
+    expect(events[0].preciseZoneId).toBe("rbkc-control-8-earls-court-exhibition-centre");
+    expect(events[0].event.sched).toEqual([]);
+    expect(events[0].regularSched).toEqual([
+      { days: [1, 2, 3, 4, 5], from: "08:30", to: "22:00" },
+      { days: [6], from: "08:30", to: "18:30" },
+    ]);
+  });
+});
+
+// --- Tower Hamlets shape: geometry-only layer, hours from a verified table ---
+const TWH_SPEC: ArcgisCpzSpec = {
+  idPrefix: "twh",
+  namePrefix: "Tower Hamlets",
+  src: "https://www.towerhamlets.gov.uk/parking",
+  ratePence: 450,
+  maxStayHours: 4,
+  hoursFields: [],
+  zoneField: "ZONE_CODE",
+  verifiedHours: {
+    A3: [{ days: [1, 2, 3, 4, 5, 6], from: "08:30", to: "17:30" }],
+    B4: [{ days: [1, 2, 3, 4, 5, 6], from: "08:30", to: "19:30" }],
+  },
+  verifiedEvents: {
+    B4: { venue: "London Stadium", rawText: "Event days only sun 8.30am to 7.30pm" },
+  },
+  defaultSched: [{ days: [1, 2, 3, 4, 5], from: "08:30", to: "17:30" }],
+};
+
+const twhFeature = (code: string, lat: number, lng: number) => ({
+  type: "Feature",
+  properties: { ZONE_CODE: code },
+  geometry: { type: "Polygon", coordinates: square(lat, lng, 0.01) },
+});
+
+const TWH_FIXTURE: GeoFeatureCollection = {
+  type: "FeatureCollection",
+  features: [
+    twhFeature("A3", 51.52, -0.06),
+    twhFeature("B4", 51.51, -0.02),
+    // a code with no table entry -> must fall back, and NOT claim to be verified
+    twhFeature("Z9", 51.53, -0.05),
+  ],
+};
+
+describe("transformArcgisCpz — Tower Hamlets (hours from verified table)", () => {
+  const zones = transformArcgisCpz(TWH_FIXTURE, "2026-07-21", TWH_SPEC);
+
+  it("takes hours from the table when the layer carries none", () => {
+    expect(zones.find((z) => z.id === "twh-a3")!.sched).toEqual([
+      { days: [1, 2, 3, 4, 5, 6], from: "08:30", to: "17:30" },
+    ]);
+    expect(zones.find((z) => z.id === "twh-a3")!.verified).toBe(true);
+  });
+
+  it("leaves an untabulated zone on the indicative fallback, unverified", () => {
+    const z9 = zones.find((z) => z.id === "twh-z9")!;
+    expect(z9.sched).toEqual(TWH_SPEC.defaultSched);
+    // rule 9: an unverified schedule must never be trusted to clear a restriction
+    expect(z9.verified).toBe(false);
+  });
+
+  it("keeps event-day control out of B4's regular hours", () => {
+    // Sunday is controlled ONLY on London Stadium event days
+    expect(zones.find((z) => z.id === "twh-b4")!.sched).toEqual([
+      { days: [1, 2, 3, 4, 5, 6], from: "08:30", to: "19:30" },
+    ]);
+  });
+});
+
+describe("transformArcgisEvents — verified-table event zones", () => {
+  const events = transformArcgisEvents(TWH_FIXTURE, "2026-07-21", TWH_SPEC);
+
+  it("emits a record only for the declared code, so rule 12 can warn", () => {
+    expect(events.map((e) => e.zoneKey)).toEqual(["twh-b4"]);
+    expect(events[0].event.venue).toBe("London Stadium");
+    expect(events[0].preciseZoneId).toBe("twh-b4");
+  });
+
+  it("carries the regular hours and invents no event schedule", () => {
+    expect(events[0].event.sched).toEqual([]);
+    expect(events[0].regularSched).toEqual([
+      { days: [1, 2, 3, 4, 5, 6], from: "08:30", to: "19:30" },
+    ]);
+  });
+});

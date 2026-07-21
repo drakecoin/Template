@@ -35,6 +35,7 @@ const OUT_OSM = join(OUT_DIR, "spots.osm.json");
 const OUT_MAPILLARY = join(OUT_DIR, "spots.mapillary.json");
 const OUT_REDROUTES = join(OUT_DIR, "spots.redroutes.json");
 const OUT_EVENTS = join(OUT_DIR, "zones.events.json");
+const OUT_BOROUGH_NAMES = join(OUT_DIR, "boroughs.names.json");
 
 function readExisting<T>(path: string): T[] {
   return existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as T[]) : [];
@@ -82,6 +83,14 @@ precise.sort((a, b) => a.id.localeCompare(b.id));
 writeFileSync(OUT_PRECISE, JSON.stringify(precise) + "\n");
 console.log("wrote " + precise.length + " per-zone CPZs -> " + OUT_PRECISE);
 
+// The borough display names, in registry order, so the engine can work out
+// which borough a zone belongs to from its name prefix — that's what lets the
+// UI name the boroughs whose hours are council-sourced rather than estimated
+// (see PRECISE_BOROUGHS) without a hand-kept list going stale.
+const boroughNames = BOROUGHS.map((b) => b.displayName);
+writeFileSync(OUT_BOROUGH_NAMES, JSON.stringify(boroughNames) + "\n");
+console.log("wrote " + boroughNames.length + " borough names -> " + OUT_BOROUGH_NAMES);
+
 // Event-day CPZ rules (venue-triggered). The engine DOES consume these now: a
 // zone whose regular hours are off is only free if there's no fixture, so these
 // records suppress the "park free here" badge (CLAUDE.md §12). Read from the
@@ -91,7 +100,10 @@ const events: EventZoneRecord[] = [];
 const eventBoroughs = BOROUGHS.filter(
   (b) =>
     (b.portal?.kind === "ishare" && b.portal.cpz) ||
-    (b.portal?.kind === "arcgis" && b.portal.cpz?.eventStatusField),
+    (b.portal?.kind === "arcgis" &&
+      (b.portal.cpz?.eventStatusField ||
+        b.portal.cpz?.hoursPerField ||
+        b.portal.cpz?.verifiedEvents)),
 );
 for (const entry of eventBoroughs) {
   const fresh =

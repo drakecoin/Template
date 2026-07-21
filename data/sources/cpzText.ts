@@ -37,6 +37,23 @@ export function eventControlText(raw: string, eventOnly: boolean): string {
   return m ? text.slice(m.index).replace(/^[,.]?\s*/, "").trim() : "";
 }
 
+/**
+ * True when a control clause applies ONLY on event / special-occasion days
+ * ("8.30am - 5pm Saturday to Sunday (on event days)", "1:00pm - 5:00pm Sunday
+ * on special occasions" — both RBKC).
+ *
+ * Boroughs that split their schedule one clause per column state the condition
+ * inside the clause rather than in a status column, and the "and on…" shape
+ * EVENT_MARKER looks for never appears. Such a clause must not become regular
+ * hours: the engine has no match-day calendar, so it would show a normally-free
+ * Sunday as controlled and send drivers past a legal free space.
+ */
+const EVENT_CONDITION = /\b(?:event\s+days?|special\s+occasions?|match\s+days?)\b/i;
+
+export function isEventConditional(text: string): boolean {
+  return EVENT_CONDITION.test(text);
+}
+
 /** Normalise an hours fragment so parseScheduleText can read it. */
 export function normaliseHours(text: string): string {
   return (
