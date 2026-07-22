@@ -384,3 +384,52 @@ Two things WERE settled without a browser:
    are 404 — only the CKAN action API works). Of its 1,319 datasets, **zero**
    match "controlled parking" / "CPZ" / "parking zone". There is no pan-London
    aggregated CPZ layer to shortcut the per-borough work.
+
+## Route 1 run against Cadcorp Aurora (22 Jul 2026) — conclusive, no geometry
+
+Read the viewers' network traffic in a real browser. The Aurora protocol is:
+
+    Aurora.svc/RequestSession?userName=guest&password=&script=\Aurora\<Name>.AuroraScript$
+      -> JSON containing SessionId AND the complete Legend tree
+    Aurora.svc/OpenScriptMap?sessionId=…
+    Aurora.svc/GetMapView?sessionId=…&centerX=&centerY=&scale=&width=&height=  -> a rendered IMAGE (BNG)
+    Aurora.svc/GetLastMapViewStatus / KeepAlive
+
+All JSONP, no auth beyond `guest`. **RequestSession alone yields the full layer
+tree**, which makes auditing any Aurora council cheap — no browser needed once
+you know the script name. Ealing's per-topic script names come from its map
+index page (`Adopted_Roads`, `Parking`, `Planning`, …).
+
+Findings:
+
+- **Wandsworth publishes no parking layer at all.** Its public Aurora map has
+  **211 legend entries and zero** matching park/CPZ/permit/bay/restriction. The
+  CPZ data is in a separate "CPZ street finder: staff version". So the missing
+  WFS was never the obstacle — the data simply is not on the public map. This
+  borough is closed by publication policy, not by technology.
+- **Ealing DOES publish CPZs** on a dedicated `Parking` Aurora map: layers
+  `Car Parks (Polygons)` and `Controlled Parking Zones - NAME`, with **102
+  named zones** (Acton Central Zone K, Ealing Common Zone F/G, Hanger Hill Zone
+  O, …). The names are extractable today from RequestSession.
+
+**But Aurora exposes no feature/geometry endpoint.** Its methods (from
+Aurora.js) are GetMapView, GetLastMapViewStatus, GetLayersExtent,
+GetRecordsByPoint, FindRecordsByLayersTask, GetSend. The only data-bearing one,
+`GetRecordsByPoint(x, y, radius, scaleDenominator)`, returns a rendered **`Html`**
+popup for a single point — not polygons — and returned empty at every point
+tested (the CPZ layer is presumably not enabled in a bare guest session).
+
+So route 1 is **finished for Aurora**, and the answer is no:
+1. Geometry cannot be obtained. Reconstructing boundaries would mean
+   grid-probing a council server with thousands of identify calls. That is
+   abusive and it is not a route we should take.
+2. Even hours would come one point at a time, in HTML, with the same problem.
+
+### What is actually left for Ealing
+
+Its 102 zone NAMES are known. Hours would have to be transcribed from
+ealing.gov.uk (the Tower Hamlets route), giving council-tier hours on a
+**borough-outline boundary** — a real downgrade versus every other wired
+borough, and one to take deliberately rather than by drift. Barnet runs Cadcorp
+WebMap (a different product, ASP.NET WebResource) and has not been probed this
+way; its layer list is still unknown.

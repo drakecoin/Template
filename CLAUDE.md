@@ -267,6 +267,19 @@ Best Overall, Best Free, Closest, Cheapest Paid.
    (WebMap)** publish no OGC service — every standard `.svc` path 400/404s and
    the roots return the bare WCF placeholder. Islington is a login-gated
    MapThat. See docs/DATA_PIPELINE.md "Fifth pass" before re-searching these.
-20. Wire more borough portals (21 still fallback-only); parsed tariff tables
+20. Cadcorp **Aurora is finished as a route** (July 2026). `Aurora.svc/
+   RequestSession?userName=guest&password=&script=\Aurora\<Name>.AuroraScript$`
+   returns the whole legend tree as JSONP with no auth, so auditing an Aurora
+   council is cheap. But Aurora serves rendered IMAGES: its only data-bearing
+   method, `GetRecordsByPoint`, returns an `Html` popup for one point, never
+   polygons. Harvesting geometry would mean grid-probing a council server —
+   don't.
+   - **Wandsworth publishes no parking layer at all** (211 legend entries,
+     zero parking); its CPZ data sits in a staff-only street finder. Closed by
+     policy, not technology.
+   - **Ealing DOES publish CPZs** — a `Parking` map with `Controlled Parking
+     Zones - NAME` and 102 named zones, extractable today. No geometry though,
+     so wiring it means transcribed hours on a borough-outline boundary.
+21. Wire more borough portals (21 still fallback-only); parsed tariff tables
    (COST columns); build the match-day feed + engine hook (docs/EVENT_DAYS.md)
    so event-risk warnings become real evaluations.
