@@ -433,3 +433,43 @@ ealing.gov.uk (the Tower Hamlets route), giving council-tier hours on a
 borough, and one to take deliberately rather than by drift. Barnet runs Cadcorp
 WebMap (a different product, ASP.NET WebResource) and has not been probed this
 way; its layer list is still unknown.
+
+## Correction: City of London was never blocked by its certificate (22 Jul 2026)
+
+The earlier note that `www.mapping.cityoflondon.gov.uk` "serves a self-signed
+certificate" was **wrong, and the fault was local**. The cert is a valid Entrust
+OV cert (`Verify return code: 0 (ok)`). It fails in **curl on this machine**
+because the system CA bundle lacks the Entrust root — but the ETL runs in Node,
+and Node fetches the layer happily:
+
+    node -e 'fetch("https://www.mapping.cityoflondon.gov.uk/arcgis/rest/services/INSPIRE/MapServer/52?f=json")'
+    -> 200, layer "Waiting Restrictions"
+
+So there is **no TLS decision to make** and nothing to disable. City of London's
+bay-level data (layers 69 Pay Display, 76 Resident Parking, 52 Waiting
+Restrictions) is reachable today. Lesson: verify a TLS claim with `openssl
+s_client` and the actual runtime before recording it as a property of the server.
+
+### What wiring City of London still needs
+
+Not blocked, but not trivial either — it is BAY data, which carries the
+strictest rules (8, 9, 14), so it deserves its own pass:
+- A `kind:"arcgis"` **bays** portal + adapter. `transformBayFeatures` is already
+  portal-agnostic (it takes a GeoFeatureCollection), so the adapter is thin like
+  `geoserverCpz` — but its field sniffing finds no `typeKey` in City of London's
+  columns (`DESIGNATED_PARKING_PLACE`, not "type"/"description"/"restriction"),
+  so BaySpec needs either explicit field names or a fixed per-layer bay type.
+- `CHARGE` is empty on all 155 rows, so bays must price off the borough rate and
+  carry the rule 9 estimate warning while their HOURS are council-tier.
+
+## Croydon: PDF-only (22 Jul 2026)
+
+Croydon's CPZ pages are plain Drupal with **no map and no GIS backend** — zone
+boundaries are published as one PDF per permit zone. Nothing machine-readable.
+(`/parking-streets-and-transport/parking/parking-permits/permit-zones` is dead;
+the live page is `/parking/parking-restrictions/list-controlled-parking-zones`.)
+
+Also worth recording for future sweeps: **council sites increasingly block
+curl** (Croydon and Enfield return 403, Lewisham and Brent hang) while serving
+a real browser fine. Scraping council pages from the shell is no longer
+reliable; drive them through the browser.

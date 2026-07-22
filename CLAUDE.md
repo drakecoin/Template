@@ -280,6 +280,17 @@ Best Overall, Best Free, Closest, Cheapest Paid.
    - **Ealing DOES publish CPZs** — a `Parking` map with `Controlled Parking
      Zones - NAME` and 102 named zones, extractable today. No geometry though,
      so wiring it means transcribed hours on a borough-outline boundary.
-21. Wire more borough portals (21 still fallback-only); parsed tariff tables
+21. **City of London is NOT blocked by TLS** — that earlier note was wrong and
+   the fault was local. Its cert is a valid Entrust OV cert; only *curl on this
+   machine* rejects it (system CA bundle missing the Entrust root). Node — which
+   is what the ETL uses — fetches the layers fine. Wiring it needs an ArcGIS
+   **bays** adapter (transformBayFeatures is already portal-agnostic, but
+   BaySpec needs explicit field names: City of London has
+   DESIGNATED_PARKING_PLACE, not "type"), and its empty CHARGE column means bays
+   price off the borough rate with a rule 9 warning while their hours are
+   council-tier. Best remaining coverage win with no discovery lottery.
+22. Croydon is PDF-only (no map, no GIS backend). Note council sites now block
+   curl (403/hang) while serving a real browser — scrape them via the browser.
+23. Wire more borough portals (21 still fallback-only); parsed tariff tables
    (COST columns); build the match-day feed + engine hook (docs/EVENT_DAYS.md)
    so event-risk warnings become real evaluations.
